@@ -68,12 +68,15 @@ defmodule Spectre.Pulse.Transports.REST do
   @spec probe(Route.t(), keyword()) :: {:ok, Reachability.t()}
   @impl Spectre.Pulse.Transport
   def probe(%Route{target: url} = route, opts) when is_binary(url) do
-    request_opts = [
-      url: url,
-      method: :head,
-      receive_timeout: Keyword.get(opts, :timeout, 3_000),
-      redirect: false
-    ]
+    request_opts =
+      [
+        url: url,
+        method: :head,
+        receive_timeout: Keyword.get(opts, :timeout, 3_000),
+        redirect: false
+      ]
+      |> Keyword.merge(metadata(route, :req_options, []))
+      |> Keyword.merge(Keyword.get(opts, :req_options, []))
 
     case Req.request(request_opts) do
       {:ok, response} when response.status in 200..499 ->
@@ -254,7 +257,7 @@ defmodule Spectre.Pulse.Transports.REST do
     do: reason in [:econnrefused, :nxdomain, :enetunreach, :ehostunreach, :closed]
 
   @spec authenticate(map() | [{term(), term()}], term(), keyword()) ::
-          {:ok, String.t(), map()} | {:error, Error.t()}
+          {:ok, String.t() | nil, map()} | {:error, Error.t()}
   defp authenticate(headers, peer, opts) do
     authenticator = Keyword.get(opts, :authenticator)
 
@@ -286,13 +289,16 @@ defmodule Spectre.Pulse.Transports.REST do
     do: {:error, Error.not_sent(:authentication, :rest_authenticator_required)}
 
   @spec normalize_authenticator_result(term()) ::
-          {:ok, String.t(), map()} | {:error, Error.t()}
+          {:ok, String.t() | nil, map()} | {:error, Error.t()}
   defp normalize_authenticator_result({:ok, identity}) when is_binary(identity),
     do: {:ok, identity, %{}}
 
   defp normalize_authenticator_result({:ok, identity, verified})
        when is_binary(identity) and is_map(verified),
        do: {:ok, identity, verified}
+
+  defp normalize_authenticator_result({:ok, nil, verified}) when is_map(verified),
+    do: {:ok, nil, verified}
 
   defp normalize_authenticator_result({:error, %Error{} = error}), do: {:error, error}
 
