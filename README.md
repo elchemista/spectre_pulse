@@ -756,30 +756,3 @@ Use `Spectre.Pulse.reachability/3` to inspect current technical reachability,
 but do not treat it as a promise that an Agent is available or will accept the
 request.
 
-## Verification
-
-The test suite uses the real
-[`elchemista/spectre`](https://github.com/elchemista/spectre) dependency. It
-creates Pulse-enabled Agents, exercises automatic identity and Local
-subscription, sends Agents through the normal Spectre turn/effect lifecycle,
-and verifies every built-in transport plus custom-driver registration.
-
-Run the complete quality gate with:
-
-```console
-mix format --check-formatted
-mix compile --warnings-as-errors
-mix test --warnings-as-errors
-mix test --cover
-mix credo --strict
-mix dialyzer
-mix docs --warnings-as-errors
-mix run examples/local_agents.exs
-```
-
-`mix test --cover` enforces a project threshold of 91% without ignoring
-application modules. The current suite covers protocol values, codecs,
-validation, contacts, directories, discovery, routing, Fabric and Local
-registries, runtime identity collisions, inbound security, effects, Local,
-REST, WebSocket, PubSub, BEAM-node, custom transports, probes, failover, and
-error normalization.
