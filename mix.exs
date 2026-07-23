@@ -14,6 +14,7 @@ defmodule SpectrePulse.MixProject do
       description: "A transport-independent protocol for communication between Spectre agents.",
       source_url: @source_url,
       homepage_url: @source_url,
+      test_coverage: [summary: [threshold: 91]],
       package: package(),
       docs: docs(),
       deps: deps()

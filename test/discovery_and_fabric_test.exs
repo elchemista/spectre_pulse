@@ -37,6 +37,15 @@ defmodule Spectre.Pulse.DiscoveryAndFabricTest.AutoIdentityAgent do
   end
 end
 
+defmodule Spectre.Pulse.DiscoveryAndFabricTest.SecondAutoIdentityAgent do
+  use Spectre.Agent
+  use Spectre.Pulse
+
+  pulsing do
+    advertise(capabilities: [:automatic_identity])
+  end
+end
+
 defmodule Spectre.Pulse.DiscoveryAndFabricTest do
   use ExUnit.Case, async: false
 
@@ -52,6 +61,7 @@ defmodule Spectre.Pulse.DiscoveryAndFabricTest do
   alias __MODULE__.AutoIdentityAgent
   alias __MODULE__.CustomTransport
   alias __MODULE__.Directory
+  alias __MODULE__.SecondAutoIdentityAgent
 
   test "Directory behaves like DNS while physical routes stay outside the Agent" do
     book = ContactBook.new!()
@@ -193,11 +203,14 @@ defmodule Spectre.Pulse.DiscoveryAndFabricTest do
 
   test "use Spectre.Pulse assigns a stable 128-bit address and the runtime subscribes it" do
     expected = Address.for_agent(AutoIdentityAgent)
+    second = Address.for_agent(SecondAutoIdentityAgent)
 
     assert {:ok, config} = Spectre.Pulse.config(AutoIdentityAgent)
     assert config.identity == expected
     assert expected =~ ~r/^spectre:\/\/pulse\/[0-9a-f]{32}$/
     assert Address.for_agent(AutoIdentityAgent) == expected
+    assert second =~ ~r/^spectre:\/\/pulse\/[0-9a-f]{32}$/
+    assert second != expected
 
     runtime = start_supervised!({Spectre.Pulse, id: :automatic_agent_runtime})
     assert is_pid(runtime)
@@ -206,6 +219,9 @@ defmodule Spectre.Pulse.DiscoveryAndFabricTest do
              Local.lookup(expected)
 
     assert Process.alive?(mailbox)
+
+    assert {:ok, second_mailbox, %{agent: SecondAutoIdentityAgent}} = Local.lookup(second)
+    assert Process.alive?(second_mailbox)
   end
 
   test "a connection owned by a process disappears when that process exits" do
