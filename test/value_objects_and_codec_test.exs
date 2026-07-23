@@ -19,6 +19,7 @@ defmodule Spectre.Pulse.ValueObjectsAndCodecTest do
   alias Spectre.Pulse.Envelope
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Identity
+  alias Spectre.Pulse.InboundContext
   alias Spectre.Pulse.Payload
   alias Spectre.Pulse.Protocol
   alias Spectre.Pulse.Reachability
@@ -37,6 +38,38 @@ defmodule Spectre.Pulse.ValueObjectsAndCodecTest do
       )
 
     %{envelope: envelope}
+  end
+
+  test "default public arities preserve their documented contracts", %{envelope: envelope} do
+    identity = Identity.new!(address: envelope.from)
+
+    assert {:ok, %Envelope{payload: %{type: "pulse.identity.describe"}}} =
+             Control.describe(identity, envelope.to)
+
+    assert {:ok, %Envelope{payload: %{type: "pulse.reachability.ping"}}} =
+             Control.ping(envelope.from, envelope.to)
+
+    assert %Payload{type: "tests.perform"} = Payload.new!(type: "tests.perform")
+    assert Protocol.limits() == Protocol.default_limits()
+
+    observation = Reachability.new(:reachable)
+    assert Reachability.expired?(observation)
+
+    assert %InboundContext{binding: :keyword} =
+             InboundContext.new(binding: :keyword)
+  end
+
+  test "validator attaches the envelope id to nested typed errors", %{envelope: envelope} do
+    invalid = %{envelope | from: "not-a-pulse-address"}
+
+    assert {:error,
+            %Error{
+              kind: :validation,
+              message_id: message_id,
+              reason: {:invalid_address, _reason}
+            }} = Validator.validate(invalid)
+
+    assert message_id == envelope.id
   end
 
   test "generated message identifiers are unique RFC 9562 UUIDv7 values" do

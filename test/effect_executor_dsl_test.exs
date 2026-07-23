@@ -20,8 +20,24 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest.Agent do
 
   pulsing do
     identity("spectre://effects/agent")
+    network(Spectre.Pulse.Network.Routed)
     contact(:receiver, "spectre://effects/receiver")
   end
+
+  flow :default_pulse do
+    on :default_pulse, regex: ~r/^default pulse$/ do
+      pulse(:receiver)
+    end
+  end
+
+  interrupt :pulse_block, pulse: "effects.interrupt.block" do
+    run(:build_one)
+  end
+
+  interrupt(:pulse_compact,
+    pulse: "effects.interrupt.compact",
+    do: run(:build_one)
+  )
 
   def build_one(input), do: %{source: input.text}
   def build_two(input, context), do: {:ok, %{source: input.text, agent: context.agent}}
@@ -312,6 +328,26 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
 
     assert {:ok, missing} = Executor.execute_pending(%Spectre.State{}, Agent, input: input)
     assert [%{type: :pulse_effect_missing}] = missing.events
+
+    empty_result = %Spectre.Result{state: %Spectre.State{}, input: input}
+    assert {:ok, %Spectre.Result{}} = Executor.execute(Agent, empty_result)
+    assert {:ok, %Spectre.Result{}} = Spectre.Pulse.execute(Agent, empty_result)
+
+    empty_turn = Spectre.Turn.from_result(Agent, input, [], empty_result)
+    assert {:ok, %Spectre.Turn{}} = Executor.execute_turn(empty_turn)
+
+    ownerless_state = %{
+      staged.state
+      | pending_effects: [
+          %{Spectre.State.pending_effect(staged.state) | owner: nil}
+        ]
+    }
+
+    assert {:ok, ownerless} =
+             Executor.execute_pending(ownerless_state, Agent, routes: [route])
+
+    assert [%Spectre.Effect{status: :completed}] = ownerless.effects
+    assert_receive {:effect_delivered, _ownerless_envelope}
   end
 
   test "executor updates turns and records unambiguous delivery failure", %{
@@ -434,6 +470,19 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
 
   test "contacts and contact books reject malformed data and keep indexes coherent" do
     address = "spectre://contacts/one"
+    assert {:ok, %Contact{key: :default, identity: ^address}} = Contact.new(:default, address)
+
+    assert {:error, %Error{reason: :route_target_required}} =
+             Contact.new(:invalid_route, address,
+               routes: [
+                 %{
+                   id: "invalid-contact-route",
+                   address: address,
+                   transport: AcceptTransport,
+                   target: nil
+                 }
+               ]
+             )
 
     invalid_contacts = [
       {%{key: nil, identity: address}, {:invalid_contact_key, nil}},
@@ -474,5 +523,20 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
     assert ContactBook.delete(replaced, :missing) == replaced
     assert [^replacement] = ContactBook.find(replaced, identity: replacement.identity)
     assert {:ok, ^replaced} = ContactBook.merge([replaced])
+
+    assert {:ok, %ContactBook{}} = ContactBook.new()
+    assert %ContactBook{} = ContactBook.new!()
+
+    assert_raise ArgumentError, fn ->
+      ContactBook.new!([%{key: nil, identity: address}])
+    end
+
+    named = Contact.new!("named", "spectre://contacts/named")
+    assert {:ok, named_book} = ContactBook.new([named])
+    assert {:ok, ^named} = ContactBook.fetch(named_book, "named")
+
+    renamed = %{named | display_name: "Named"}
+    assert {:ok, renamed_book} = ContactBook.put(named_book, renamed)
+    assert {:ok, ^renamed} = ContactBook.fetch(renamed_book, "named")
   end
 end

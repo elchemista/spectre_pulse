@@ -51,6 +51,7 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
   alias Spectre.Pulse.ContactBook
   alias Spectre.Pulse.Directory
   alias Spectre.Pulse.Directory.Resolution
+  alias Spectre.Pulse.Discovery
   alias Spectre.Pulse.Envelope
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Network
@@ -156,6 +157,11 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
 
     assert {:ok, %Resolution{address: "spectre://contracts/receiver-test"}} =
              Directory.resolve(resolver, :receiver, suffix: "test")
+
+    assert {:ok, %Resolution{address: "spectre://contracts/bare-module"}} =
+             Directory.resolve(DirectoryFixture, :receiver,
+               resolve_reply: "spectre://contracts/bare-module"
+             )
   end
 
   test "directory normalizes errors, malformed values, exceptions and throws" do
@@ -241,6 +247,9 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
     assert {:ok, ^contacts} =
              Directory.contacts(DirectoryFixture, contacts_reply: {:ok, contacts})
 
+    assert {:ok, ^contacts} =
+             Directory.contacts({DirectoryFixture, contacts_reply: contacts}, [])
+
     assert {:ok, ^contacts} = Directory.contacts(ContactBook.new!(contacts), [])
     assert {:ok, []} = Directory.contacts(Protocol, [])
     assert {:ok, []} = Directory.contacts(%{}, [])
@@ -256,6 +265,56 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
 
     assert {:error, %Error{reason: {:invalid_contact, :invalid}}} =
              Directory.contacts(DirectoryFixture, contacts_reply: [:invalid])
+  end
+
+  test "discovery preserves fallback errors and rejects malformed explicit routes" do
+    address = "spectre://contracts/discovery-edge"
+    contact = Contact.new!(:edge, address)
+    book = ContactBook.new!([contact])
+
+    assert {:ok, %Resolution{address: ^address}} =
+             Discovery.resolve_identity(book, :edge)
+
+    directories = [
+      {DirectoryFixture, resolve_reply: {:error, :first}},
+      {DirectoryFixture, resolve_reply: {:error, :second}}
+    ]
+
+    assert {:error, %Error{reason: :second}} =
+             Discovery.resolve_identity(ContactBook.new!(), :edge, directories: directories)
+
+    unavailable =
+      {DirectoryFixture,
+       resolve_reply: {:error, :unused}, routes_reply: {:error, :directory_unavailable}}
+
+    assert {:error,
+            %Error{
+              reason: {:discovery_failed, ^address, [%Error{reason: :directory_unavailable}]}
+            }} = Discovery.routes(address, directories: [unavailable])
+
+    route =
+      Route.local(address, self(), id: "discovery-edge-route")
+
+    assert {:ok, [^route]} =
+             Discovery.routes(address,
+               routes: [route],
+               directories: [unavailable]
+             )
+
+    assert {:error, %Error{reason: :route_target_required}} =
+             Discovery.routes(address,
+               routes: [
+                 %{
+                   id: "invalid-explicit-route",
+                   address: address,
+                   transport: TransportFixture,
+                   target: nil
+                 }
+               ]
+             )
+
+    assert {:error, %Error{reason: {:invalid_routes, :invalid}}} =
+             Discovery.routes(address, routes: :invalid)
   end
 
   test "route validates fields and every convenience constructor", %{envelope: envelope} do

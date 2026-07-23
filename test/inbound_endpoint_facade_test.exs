@@ -25,12 +25,21 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest.Authorizer do
 end
 
 defmodule Spectre.Pulse.InboundEndpointFacadeTest.Callbacks do
+  alias Spectre.Pulse.Error
+
   def map_input(_envelope, _context, base, suffix) do
     %{base | text: base.text <> suffix}
   end
 
+  def raise_input(_envelope, _context, _base), do: raise("MFA mapper crash")
+  def throw_input(_envelope, _context, _base), do: throw(:mfa_mapper_throw)
+
   def state_scope(_target, _envelope, context, suffix) do
     {:ok, {:custom_scope, context.binding, suffix}}
+  end
+
+  def state_scope_error(_target, _envelope, _context) do
+    {:error, Error.not_sent(:inbound, :typed_scope_failure)}
   end
 end
 
@@ -356,6 +365,12 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
              Inbound.to_input(envelope, context,
                input_mapper: fn _envelope, _context, _base -> throw(:mapper_throw) end
              )
+
+    assert {:error, %Error{reason: {:input_mapper, :exception, %RuntimeError{}}}} =
+             Inbound.to_input(envelope, context, input_mapper: {Callbacks, :raise_input, []})
+
+    assert {:error, %Error{reason: {:input_mapper, :throw, :mfa_mapper_throw}}} =
+             Inbound.to_input(envelope, context, input_mapper: {Callbacks, :throw_input, []})
   end
 
   test "target resolvers normalize functions, modules, bare values and failures", %{
@@ -384,6 +399,7 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
       {fn _address, _context -> :error end, {:target_not_found, envelope.to}},
       {fn _address, _context -> nil end, {:target_not_found, envelope.to}},
       {:invalid, :target_not_found},
+      {123, :target_not_found},
       {fn _address, _context -> raise "resolver crash" end,
        {:target_resolver, :exception, RuntimeError}},
       {fn _address, _context -> throw(:resolver_throw) end,
@@ -521,6 +537,57 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
                target_identity: envelope.to,
                state_scope: fn _target, _envelope, _context -> raise "scope crash" end
              )
+
+    typed_scope_error = Error.not_sent(:inbound, :typed_scope_failure)
+
+    assert {:error, ^typed_scope_error} =
+             Inbound.receive(envelope, context,
+               target_identity: envelope.to,
+               state_scope: {Callbacks, :state_scope_error, []}
+             )
+  end
+
+  test "inbound can target a supervised Spectre session process" do
+    envelope =
+      Envelope.new!(
+        from: "spectre://inbound/sender",
+        to: "spectre://inbound/plain",
+        payload: %{type: "plain.perform", data: "session"}
+      )
+
+    {:ok, session} = Spectre.summon(agent: PlainAgent)
+
+    on_exit(fn ->
+      if Process.alive?(session), do: GenServer.stop(session)
+    end)
+
+    assert {:ok, %InboundResult{target: ^session, receipt: receipt}} =
+             Inbound.receive(
+               envelope,
+               %{
+                 authenticated_identity: envelope.from,
+                 target: session,
+                 binding: :session
+               },
+               target_identity: envelope.to
+             )
+
+    assert receipt.metadata.target == inspect(session)
+  end
+
+  test "inbound normalizes invalid host targets without leaking exceptions", %{envelope: envelope} do
+    assert {:error, %Error{outcome: :outcome_unknown, reason: reason}} =
+             Inbound.receive(
+               envelope,
+               %{
+                 authenticated_identity: envelope.from,
+                 target: fn -> :invalid_host end
+               },
+               target_identity: envelope.to
+             )
+
+    assert match?({:spectre_turn_exception, _exception}, reason) or
+             match?({:spectre_turn_exit, _kind, _reason}, reason)
   end
 
   test "explicit target configuration requires identity and accepts string keyed contexts", %{
@@ -585,6 +652,24 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
 
     assert_raise ArgumentError, fn -> Config.new!(identity: "invalid") end
     assert {:error, %Error{reason: {:agent_not_pulse_enabled, String}}} = Config.fetch(String)
+
+    raw_module =
+      Module.concat(__MODULE__, :"RawConfig#{System.unique_integer([:positive])}")
+
+    Module.create(
+      raw_module,
+      quote do
+        def __spectre_pulse__, do: %{identity: "spectre://config/raw"}
+      end,
+      Macro.Env.location(__ENV__)
+    )
+
+    on_exit(fn ->
+      :code.purge(raw_module)
+      :code.delete(raw_module)
+    end)
+
+    assert {:ok, %Config{identity: "spectre://config/raw"}} = Config.fetch(raw_module)
   end
 
   test "expectations cancel, expire and match reply or typed correlation", %{envelope: envelope} do
@@ -622,7 +707,12 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
 
     static = ContactBook.new!([Contact.new!(:same, "spectre://state/static")])
     dynamic = Contact.new!(:same, "spectre://state/dynamic")
-    {:ok, state} = PulseState.remember_contact(%Spectre.State{}, dynamic)
+    retained = Contact.new!(:retained, "spectre://state/retained")
+
+    {:ok, state} =
+      %Spectre.State{}
+      |> PulseState.remember_contact(dynamic)
+      |> then(fn {:ok, state} -> PulseState.remember_contact(state, retained) end)
 
     assert {:ok, ^dynamic} = state |> PulseState.contact_book(static) |> ContactBook.fetch(:same)
 
@@ -639,6 +729,9 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
 
     assert PulseState.expectations(state) == %{}
     assert :unmatched = PulseState.correlate(state, %{envelope | relates_to: nil})
+
+    forgotten = PulseState.forget_contact(state, :same)
+    assert :error = forgotten |> PulseState.contact_book() |> ContactBook.fetch(:same)
   end
 
   test "Pulse facade resolves and merges module, tuple and Context contact sources" do
@@ -709,6 +802,9 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
 
     assert {:ok, %Reachability{status: :reachable, via: :websocket}} =
              Spectre.Pulse.reachability(FacadeAgent, :static)
+
+    assert {:ok, %Reachability{status: :reachable, via: :websocket}} =
+             Spectre.Pulse.reachability({FacadeAgent, %Spectre.State{}}, :static)
 
     assert :ok = Spectre.Pulse.disconnect(route.id)
     assert :ok = Spectre.Pulse.disconnect(route.id)

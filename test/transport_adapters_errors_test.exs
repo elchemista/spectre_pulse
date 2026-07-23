@@ -162,6 +162,16 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
                req_options: [adapter: error_adapter(:timeout), retry: false]
              )
 
+    raw_error = RuntimeError.exception("raw transport failure")
+
+    assert {:error, %Error{outcome: :outcome_unknown, reason: ^raw_error}} =
+             REST.deliver(route, envelope,
+               req_options: [
+                 adapter: fn request -> {request, raw_error} end,
+                 retry: false
+               ]
+             )
+
     invalid_route = %{route | target: :invalid}
 
     assert {:error, %Error{outcome: :not_sent, reason: {:invalid_rest_url, :invalid}}} =
@@ -216,6 +226,8 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
     {:ok, body} = JSON.encode(envelope, [])
     endpoint = fn _received, _context -> :ok end
 
+    assert %{status: 401} = REST.handle_request(body, %{}, :peer)
+
     response =
       REST.handle_request(body, [{"Authorization", "Bearer token"}], :peer,
         target: endpoint,
@@ -237,6 +249,15 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
       )
 
     assert unauthenticated.status == 202
+
+    rejected =
+      REST.handle_request(body, %{}, :peer,
+        target: endpoint,
+        authenticator: fn _headers, _peer -> {:error, "opaque rejection"} end
+      )
+
+    assert rejected.status == 401
+    assert Jason.decode!(rejected.body)["reason"] == "request_rejected"
 
     existing = Error.not_sent(:authentication, :revoked)
 
@@ -293,6 +314,15 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
 
     assert REST.handle_request(body, %{}, :peer,
              target: fn _envelope, _context -> {:error, :endpoint_failure} end,
+             authenticator: auth
+           ).status == 503
+
+    unencodable_receipt = fn _envelope, _context ->
+      {:ok, Receipt.accepted(envelope.id, metadata: %{callback: fn -> :ok end})}
+    end
+
+    assert REST.handle_request(body, %{}, :peer,
+             target: unencodable_receipt,
              authenticator: auth
            ).status == 503
   end
@@ -484,6 +514,12 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
     assert {:error, %Error{outcome: :outcome_unknown, reason: :node_timeout}} =
              Node.deliver(sleeping, envelope, timeout: 1)
 
+    assert {:error,
+            %Error{
+              outcome: :outcome_unknown,
+              reason: {:node_call_failed, :error, _reason}
+            }} = Node.deliver(route, envelope, timeout: :invalid)
+
     unavailable =
       Route.node(envelope.to, :"pulse_missing@127.0.0.1", endpoint, id: "node-missing")
 
@@ -551,6 +587,27 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
 
     assert {:ok, %Reachability{status: :unreachable, reason: {:invalid_local_endpoint, _target}}} =
              Local.probe(invalid, [])
+
+    via_module =
+      Module.concat(__MODULE__, :"ThrowingVia#{System.unique_integer([:positive])}")
+
+    Module.create(
+      via_module,
+      quote do
+        def whereis_name(_name), do: throw(:via_lookup_failed)
+      end,
+      Macro.Env.location(__ENV__)
+    )
+
+    on_exit(fn ->
+      :code.purge(via_module)
+      :code.delete(via_module)
+    end)
+
+    throwing = %{route | target: {:via, via_module, :endpoint}}
+
+    assert {:error, %Error{reason: {:invalid_local_endpoint, _target}}} =
+             Local.deliver(throwing, envelope, [])
 
     assert {:error, %Error{reason: :invalid_local_mailbox_message}} =
              Local.handle_message(:invalid, nil)

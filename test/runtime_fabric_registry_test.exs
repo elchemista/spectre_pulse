@@ -101,6 +101,14 @@ defmodule Spectre.Pulse.RuntimeFabricRegistryTest do
   test "Fabric validates connection options, ownership and route replacement" do
     address = "spectre://registry/routes"
 
+    assert {:error, {:already_started, fabric}} = Fabric.start_link()
+    assert fabric == Process.whereis(Fabric)
+
+    assert {:ok, default_route} =
+             Fabric.connect(address, :websocket, self())
+
+    assert :ok = Fabric.disconnect(default_route.id)
+
     invalid = [
       {"invalid", :websocket, self(), [], {:invalid_address, :address_must_be_logical}},
       {address, :missing_transport, self(), [], {:unknown_transport, :missing_transport}},
@@ -231,6 +239,9 @@ defmodule Spectre.Pulse.RuntimeFabricRegistryTest do
     assert endpoint_opts[:allow_unauthenticated]
     assert endpoint_opts[:on_result] == :hook
     assert Process.alive?(pid_b)
+
+    send(pid_a, :unexpected_local_message)
+    assert %{agent: AgentA} = :sys.get_state(pid_a)
   end
 
   test "Runtime rejects malformed options and transport registrations" do
@@ -285,6 +296,82 @@ defmodule Spectre.Pulse.RuntimeFabricRegistryTest do
             }} = Runtime.start_link([])
 
     assert Enum.sort(agents) == Enum.sort([first, second])
+  end
+
+  test "Runtime reuses an unowned subscription for the same Agent" do
+    assert {:ok, original} = Local.subscribe(AgentA)
+
+    on_exit(fn ->
+      terminate_subscription("spectre://registry/agent-a")
+    end)
+
+    assert {:ok, runtime} = Runtime.start_link([])
+
+    assert {:ok, ^original, %{agent: AgentA, owner: nil}} =
+             Local.lookup("spectre://registry/agent-a")
+
+    GenServer.stop(runtime)
+    assert {:ok, ^original, _metadata} = Local.lookup("spectre://registry/agent-a")
+  end
+
+  test "Runtime refuses a subscription owned by another live runtime" do
+    Process.flag(:trap_exit, true)
+    owner = spawn(fn -> Process.sleep(:infinity) end)
+    assert {:ok, _endpoint} = Local.subscribe(AgentA, owner: owner)
+
+    on_exit(fn ->
+      Process.exit(owner, :kill)
+      terminate_subscription("spectre://registry/agent-a")
+    end)
+
+    assert {:error,
+            %Error{
+              reason: {:agent_owned_by_another_runtime, AgentA, ^owner}
+            }} = Runtime.start_link([])
+  end
+
+  test "Runtime replaces a subscription left by a dead owner" do
+    owner =
+      spawn(fn ->
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    monitor = Process.monitor(owner)
+    send(owner, :stop)
+    assert_receive {:DOWN, ^monitor, :process, ^owner, :normal}
+    assert {:ok, original} = Local.subscribe(AgentA, owner: owner)
+
+    assert {:ok, runtime} = Runtime.start_link([])
+
+    assert {:ok, replacement, %{agent: AgentA, owner: ^runtime}} =
+             Local.lookup("spectre://registry/agent-a")
+
+    refute replacement == original
+    GenServer.stop(runtime)
+    assert :error = Local.lookup("spectre://registry/agent-a")
+  end
+
+  test "Runtime reports invalid compiled Agent configuration" do
+    Process.flag(:trap_exit, true)
+    module = Module.concat(__MODULE__, :"InvalidConfig#{System.unique_integer([:positive])}")
+
+    Module.create(
+      module,
+      quote do
+        def __spectre_pulse__, do: :invalid
+      end,
+      Macro.Env.location(__ENV__)
+    )
+
+    on_exit(fn ->
+      :code.purge(module)
+      :code.delete(module)
+    end)
+
+    assert {:error, %Error{reason: {:invalid_pulse_config, :invalid}}} =
+             Runtime.start_link([])
   end
 
   defp unique_atom(prefix) do
