@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/elchemista/spectre_pulse/blob/main/priv/schema/pulse-envelope-v1.schema.json",
+  "title": "Spectre Pulse Envelope v1",
+  "description": "Transport-independent message envelope for communication between Spectre agents.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "id",
+    "from",
+    "to",
+    "act",
+    "relates_to",
+    "payload",
+    "metadata"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "from": {
+      "$ref": "#/$defs/address"
+    },
+    "to": {
+      "$ref": "#/$defs/address"
+    },
+    "act": {
+      "enum": [
+        "inform",
+        "query",
+        "request"
+      ]
+    },
+    "relates_to": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        }
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "data"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 255,
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$"
+        },
+        "data": true
+      }
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "address": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^spectre://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?/.+$"
+    }
+  }
+}
