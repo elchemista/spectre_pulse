@@ -22,8 +22,19 @@ defmodule Spectre.Pulse do
   alias Spectre.Pulse.Network
   alias Spectre.Pulse.Protocol
   alias Spectre.Pulse.Runtime
+  alias Spectre.Pulse.Stack, as: StackAdapter
   alias Spectre.Pulse.State, as: PulseState
   alias Spectre.State
+
+  @behaviour Spectre.Stack.Installable
+
+  @doc false
+  @impl Spectre.Stack.Installable
+  def manifest, do: StackAdapter.manifest()
+
+  @doc false
+  @impl Spectre.Stack.Installable
+  def compile(opts, block, caller), do: StackAdapter.compile(opts, block, caller)
 
   @doc """
   Starts the host Pulse runtime.

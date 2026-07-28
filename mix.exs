@@ -1,7 +1,7 @@
 defmodule SpectrePulse.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.2"
   @source_url "https://github.com/elchemista/spectre_pulse"
 
   def project do
@@ -31,7 +31,37 @@ defmodule SpectrePulse.MixProject do
   defp deps do
     [
       # Pulse deliberately depends on Spectre, never the other way around.
-      {:spectre, github: "elchemista/spectre", ref: "38aae368aca51225e0d2e8d68b8ce10465f55ca5"},
+      {:spectre, github: "elchemista/spectre", ref: "b39b0b1e77d685c0e497cd64d7f16f20d3c1c846"},
+      {:spectre_beam,
+       github: "elchemista/spectre_beam",
+       ref: "0ea43a2ef2bd3d5f291c585c473758ce7db1b531",
+       only: :test,
+       runtime: false},
+      {:spectre_directive,
+       github: "elchemista/spectre_directive",
+       ref: "b7b1d4a4f4f60604a0f9b3f75f468d8513bc7dce",
+       only: :test,
+       runtime: false},
+      {:spectre_kinetic,
+       github: "elchemista/spectre_kinetic",
+       ref: "0719f7ce26047078e0816680d01e592993365a94",
+       only: :test,
+       runtime: false},
+      {:spectre_lens,
+       github: "elchemista/spectre_lens",
+       ref: "9066054f91d4c163ced0ec4ccefb81108ffdae10",
+       only: :test,
+       runtime: false},
+      {:spectre_mnemonic,
+       github: "elchemista/spectre_mnemonic",
+       ref: "b460a8a1c6d8450464653e45a12a4f5e102988ef",
+       only: :test,
+       runtime: false},
+      {:spectre_prism,
+       github: "elchemista/spectre_prism",
+       ref: "5754931ac224470378f5e0a32f9e480fdbcb6ade",
+       only: :test,
+       runtime: false},
       {:jason, "~> 1.4"},
       {:req, "~> 0.5"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
@@ -80,7 +110,8 @@ defmodule SpectrePulse.MixProject do
           Spectre.Pulse.InboundContext,
           Spectre.Pulse.Executor,
           Spectre.Pulse.Expectation,
-          Spectre.Pulse.Runtime
+          Spectre.Pulse.Runtime,
+          Spectre.Pulse.Stack
         ],
         Transports: [
           Spectre.Pulse.Transport,

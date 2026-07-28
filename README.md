@@ -75,14 +75,14 @@ The JSON representation is specified by
 
 ## Installation
 
-Until the first Hex release, install directly from GitHub:
+Install directly from GitHub:
 
 ```elixir
 def deps do
   [
     {:spectre,
      github: "elchemista/spectre",
-     ref: "38aae368aca51225e0d2e8d68b8ce10465f55ca5"},
+     ref: "b39b0b1e77d685c0e497cd64d7f16f20d3c1c846"},
     {:spectre_pulse, github: "elchemista/spectre_pulse"}
   ]
 end
@@ -100,6 +100,32 @@ end
 ```
 
 Pulse requires Elixir 1.19 or later.
+
+## Install Pulse in a Spectre Stack
+
+Pulse implements the versioned `Spectre.Stack.Installable` contract. The
+package-local block selects only logical adapters and does not start Pulse's
+host-owned singleton runtime:
+
+```elixir
+defmodule MyApp.AI do
+  use Spectre.Stack
+
+  install Spectre.Pulse do
+    transport :local, Spectre.Pulse.Transports.Local
+    directory MyApp.AgentDirectory
+  end
+end
+
+defmodule MyApp.Agent do
+  use Spectre.Agent, stack: MyApp.AI
+  use Spectre.Pulse
+end
+```
+
+The compiled Stack contains no PID, socket, credential, or connection. The
+host still starts `{Spectre.Pulse, ...}` explicitly until Pulse runtime
+resources become independently scopeable.
 
 ## Quick start: two Agents, no routes in Agent code
 
@@ -755,4 +781,3 @@ across transports and uses it as the Spectre turn ID on inbound delivery.
 Use `Spectre.Pulse.reachability/3` to inspect current technical reachability,
 but do not treat it as a promise that an Agent is available or will accept the
 request.
-
