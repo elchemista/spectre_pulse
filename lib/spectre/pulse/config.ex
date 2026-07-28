@@ -89,7 +89,17 @@ defmodule Spectre.Pulse.Config do
         other -> new(other)
       end
     else
-      {:error, Error.not_sent(:routing, {:agent_not_pulse_enabled, agent})}
+      fetch_definition_config(agent)
+    end
+  end
+
+  @spec fetch_definition_config(module()) :: {:ok, t()} | {:error, Error.t()}
+  defp fetch_definition_config(agent) do
+    with {:ok, definition} <- Spectre.Definition.fetch(agent),
+         %__MODULE__{} = config <- Keyword.get(definition.config, :pulse) do
+      {:ok, config}
+    else
+      _other -> {:error, Error.not_sent(:routing, {:agent_not_pulse_enabled, agent})}
     end
   end
 

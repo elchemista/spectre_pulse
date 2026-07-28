@@ -1,7 +1,7 @@
 defmodule SpectrePulse.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.2"
   @source_url "https://github.com/elchemista/spectre_pulse"
 
   def project do
@@ -31,13 +31,35 @@ defmodule SpectrePulse.MixProject do
   defp deps do
     [
       # Pulse deliberately depends on Spectre, never the other way around.
-      {:spectre, github: "elchemista/spectre", ref: "38aae368aca51225e0d2e8d68b8ce10465f55ca5"},
+      ecosystem_dep(:spectre, "SPECTRE_PATH", "spectre"),
+      ecosystem_test_dep(:spectre_beam, "SPECTRE_BEAM_PATH", "spectre_beam"),
+      ecosystem_test_dep(
+        :spectre_directive,
+        "SPECTRE_DIRECTIVE_PATH",
+        "spectre_directive"
+      ),
+      ecosystem_test_dep(:spectre_kinetic, "SPECTRE_KINETIC_PATH", "spectre_kinetic"),
+      ecosystem_test_dep(:spectre_lens, "SPECTRE_LENS_PATH", "spectre_lens"),
+      ecosystem_test_dep(:spectre_mnemonic, "SPECTRE_MNEMONIC_PATH", "spectre_mnemonic"),
+      ecosystem_test_dep(:spectre_prism, "SPECTRE_PRISM_PATH", "spectre_prism"),
       {:jason, "~> 1.4"},
       {:req, "~> 0.5"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
+  end
+
+  defp ecosystem_dep(name, env, repository) do
+    case System.get_env(env) do
+      path when is_binary(path) and path != "" -> {name, path: Path.expand(path)}
+      _other -> {name, github: "elchemista/#{repository}", branch: "feature/v0.1.2-stack"}
+    end
+  end
+
+  defp ecosystem_test_dep(name, env, repository) do
+    {^name, options} = ecosystem_dep(name, env, repository)
+    {name, Keyword.merge(options, only: :test, runtime: false)}
   end
 
   defp package do
@@ -80,7 +102,8 @@ defmodule SpectrePulse.MixProject do
           Spectre.Pulse.InboundContext,
           Spectre.Pulse.Executor,
           Spectre.Pulse.Expectation,
-          Spectre.Pulse.Runtime
+          Spectre.Pulse.Runtime,
+          Spectre.Pulse.Stack
         ],
         Transports: [
           Spectre.Pulse.Transport,

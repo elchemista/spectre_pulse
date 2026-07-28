@@ -22,8 +22,19 @@ defmodule Spectre.Pulse do
   alias Spectre.Pulse.Network
   alias Spectre.Pulse.Protocol
   alias Spectre.Pulse.Runtime
+  alias Spectre.Pulse.Stack, as: StackAdapter
   alias Spectre.Pulse.State, as: PulseState
   alias Spectre.State
+
+  @behaviour Spectre.Stack.Installable
+
+  @doc false
+  @impl Spectre.Stack.Installable
+  def manifest, do: StackAdapter.manifest()
+
+  @doc false
+  @impl Spectre.Stack.Installable
+  def compile(opts, block, caller), do: StackAdapter.compile(opts, block, caller)
 
   @doc """
   Starts the host Pulse runtime.
@@ -48,7 +59,12 @@ defmodule Spectre.Pulse do
     }
   end
 
-  @doc "Installs the Pulse DSL into a module which already uses `Spectre.Agent`."
+  @doc """
+  Imports the optional Pulse authoring DSL into a Spectre Agent.
+
+  Agents which select a Stack containing Pulse are already configured; this
+  macro only adds the convenient `pulsing`, `contact`, and `pulse` forms.
+  """
   @spec __using__(Macro.t()) :: Macro.t()
   defmacro __using__(opts \\ []) do
     opts = Macro.expand(opts, __CALLER__)
@@ -58,7 +74,11 @@ defmodule Spectre.Pulse do
     end
 
     quote bind_quoted: [opts: opts] do
-      DSL.install!(__MODULE__, opts)
+      unless Module.has_attribute?(__MODULE__, :spectre_config) do
+        raise ArgumentError, "use Spectre.Agent must appear before use Spectre.Pulse"
+      end
+
+      Spectre.Extension.register!(__MODULE__, Spectre.Pulse.Extension, opts)
 
       require Agent
 
@@ -66,8 +86,6 @@ defmodule Spectre.Pulse do
         except: [flow: 2, interrupt: 2, interrupt: 3]
 
       import DSL
-
-      @before_compile DSL
     end
   end
 
@@ -132,12 +150,21 @@ defmodule Spectre.Pulse do
   @spec disconnect(term()) :: :ok | {:error, Spectre.Pulse.Error.t()}
   defdelegate disconnect(route_id), to: Spectre.Pulse.Fabric
 
-  @doc "Executes a pending Pulse effect in an immutable Spectre result."
+  @doc """
+  Executes a pending Pulse effect through the canonical Spectre boundary.
+
+  This is a thin alias for existing callers. New code can call
+  `Spectre.execute/3` directly.
+  """
   @spec execute(module(), Spectre.Result.t(), keyword()) ::
           {:ok, Spectre.Result.t()} | {:error, term()}
   defdelegate execute(agent, result, opts \\ []), to: Executor
 
-  @doc "Executes the Pulse effect selected by a Spectre turn."
+  @doc """
+  Executes the Pulse effect selected by a turn through the canonical boundary.
+
+  This is a thin alias for existing callers.
+  """
   @spec execute_turn(Spectre.Turn.t(), keyword()) ::
           {:ok, Spectre.Turn.t()} | {:error, term()}
   defdelegate execute_turn(turn, opts \\ []), to: Executor

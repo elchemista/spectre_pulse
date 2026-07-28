@@ -75,14 +75,14 @@ The JSON representation is specified by
 
 ## Installation
 
-Until the first Hex release, install directly from GitHub:
+Install directly from GitHub:
 
 ```elixir
 def deps do
   [
     {:spectre,
      github: "elchemista/spectre",
-     ref: "38aae368aca51225e0d2e8d68b8ce10465f55ca5"},
+     ref: "b39b0b1e77d685c0e497cd64d7f16f20d3c1c846"},
     {:spectre_pulse, github: "elchemista/spectre_pulse"}
   ]
 end
@@ -100,6 +100,38 @@ end
 ```
 
 Pulse requires Elixir 1.19 or later.
+
+## Install Pulse in a Spectre Stack
+
+Pulse implements the versioned `Spectre.Stack.Installable` contract. The
+package-local block selects only logical adapters and does not start Pulse's
+host-owned singleton runtime:
+
+```elixir
+defmodule MyApp.AI do
+  use Spectre.Stack
+
+  install Spectre.Pulse do
+    transport :local, Spectre.Pulse.Transports.Local
+    directory MyApp.AgentDirectory
+  end
+end
+
+defmodule MyApp.Agent do
+  use Spectre.Agent, stack: MyApp.AI
+end
+```
+
+Selecting the Stack automatically binds Pulse configuration, the `pulse(...)`
+Flow handler, and the `:pulse` effect executor. A second
+`use Spectre.Pulse` is not required for outbound protocol behavior. Use it only
+when the Agent also needs the optional `pulsing`, `identity`, `contact`,
+`advertise`, or inbound authoring DSL.
+
+The compiled Stack contains no PID, socket, credential, or connection.
+Automatic local inbound subscriptions still require the host to start
+`{Spectre.Pulse, ...}` explicitly until Pulse runtime resources become
+independently scopeable.
 
 ## Quick start: two Agents, no routes in Agent code
 
@@ -189,9 +221,10 @@ Run Anna and explicitly execute the staged side effect:
 effect.payload.to
 # => "spectre://acme/tao"
 
-# Persist staged_result.state here when the application requires durability.
-{:ok, executed_turn} = Spectre.Pulse.execute_turn(turn)
-{:completed, completed_effect, final_result} = executed_turn.decision
+# The generic core executor owns policy, durable two-commit lifecycle,
+# idempotency, and terminal state.
+{:ok, final_result} = Spectre.execute(MyApp.Anna, staged_result)
+[%Spectre.Effect{status: :completed} = completed_effect] = final_result.effects
 
 completed_effect.result.via
 # => :local
@@ -212,7 +245,8 @@ mix run examples/local_agents.exs
 
 ## Define a Pulse-enabled Agent
 
-`use Spectre.Pulse` must follow `use Spectre.Agent`:
+When Agent-local identity, contacts, advertisements, or inbound route DSL are
+needed, `use Spectre.Pulse` follows `use Spectre.Agent`:
 
 ```elixir
 defmodule MyApp.Anna do
@@ -354,14 +388,18 @@ WebSocket, REST, or gRPC requires no Agent change.
 {:ok, turn} = Spectre.turn(MyApp.Anna, "research:nautical market")
 {:needs, %Spectre.Effect{kind: :pulse} = effect, _result} = turn.decision
 
-# This is the explicit side-effect boundary.
-{:ok, executed_turn} = Spectre.Pulse.execute_turn(turn)
-{:completed, completed_effect, result} = executed_turn.decision
+# This is the canonical explicit side-effect boundary.
+{:ok, result} = Spectre.execute(MyApp.Anna, turn.result)
+[%Spectre.Effect{status: :completed} = completed_effect] = result.effects
 ```
 
-The host must persist the staged state before delivery and persist the returned
-terminal state afterwards, using the same durability strategy it uses for
-other Spectre effects. Pulse itself has no store.
+`Spectre.execute/3` persists the staged state before delivery and the terminal
+state afterwards through Spectre's ordinary two-commit workflow. Pulse itself
+has no store or parallel lifecycle. `Spectre.Pulse.execute/3` and
+`execute_turn/2` are thin aliases for existing applications; new code can call
+`Spectre.execute/3` directly. The lower-level
+`Spectre.Pulse.Executor.execute_pending/3` is pure and leaves persistence to
+its caller.
 
 `expect:` adds only a pure `%Spectre.Pulse.Expectation{}` to the sender's
 `Spectre.State`. It does not create a remote task or timer:
@@ -720,15 +758,26 @@ For example, connection refusal before an HTTP request is written is
 silently duplicating a non-idempotent request.
 
 ```elixir
-case Spectre.Pulse.execute_turn(turn) do
-  {:ok, executed_turn} ->
-    persist_terminal_state(executed_turn)
+case Spectre.execute(MyApp.Anna, turn.result) do
+  {:ok, %{effects: [%Spectre.Effect{status: :completed}]} = executed_result} ->
+    persist_terminal_state(executed_result)
 
-  {:error, %Spectre.Pulse.Error{outcome: :not_sent} = error} ->
+  {:ok,
+   %{effects: [%Spectre.Effect{
+     status: :failed,
+     error: %Spectre.Pulse.Error{outcome: :not_sent} = error
+   }]}} ->
     schedule_retry(error.message_id)
 
-  {:error, %Spectre.Pulse.Error{outcome: :outcome_unknown} = error} ->
+  {:ok,
+   %{effects: [%Spectre.Effect{
+     status: :failed,
+     error: %Spectre.Pulse.Error{outcome: :outcome_unknown} = error
+   }]}} ->
     reconcile_before_retry(error.message_id)
+
+  {:error, reason} ->
+    handle_execution_boundary_failure(reason)
 end
 ```
 
@@ -755,4 +804,3 @@ across transports and uses it as the Spectre turn ID on inbound delivery.
 Use `Spectre.Pulse.reachability/3` to inspect current technical reachability,
 but do not treat it as a promise that an Agent is available or will accept the
 request.
-

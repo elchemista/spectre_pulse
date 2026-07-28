@@ -118,7 +118,8 @@ defmodule Spectre.Pulse.DSL do
   @spec pulse(Macro.t(), Macro.t()) :: Macro.t()
   defmacro pulse(to, opts \\ []) do
     quote do
-      run(:__spectre_pulse_stage__,
+      run(:stage,
+        handler_owner: Spectre.Pulse.Handler,
         spectre_pulse: Keyword.put(unquote(opts), :to, unquote(to))
       )
     end
@@ -267,7 +268,15 @@ defmodule Spectre.Pulse.DSL do
   @spec pulse_run_ast(keyword(), Macro.t(), keyword()) :: Macro.t()
   defp pulse_run_ast(meta, to, opts) do
     pulse_opts = Keyword.put(opts, :to, to)
-    {:run, meta, [:__spectre_pulse_stage__, [spectre_pulse: pulse_opts]]}
+
+    {:run, meta,
+     [
+       :stage,
+       [
+         handler_owner: Spectre.Pulse.Handler,
+         spectre_pulse: pulse_opts
+       ]
+     ]}
   end
 
   @spec add_pulse_check(keyword(), Macro.t()) :: keyword()
