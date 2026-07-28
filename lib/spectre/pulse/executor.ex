@@ -1,11 +1,12 @@
 defmodule Spectre.Pulse.Executor do
   @moduledoc """
-  Explicit execution boundary for `%Spectre.Effect{kind: :pulse}`.
+  Thin execution aliases for `%Spectre.Effect{kind: :pulse}`.
 
-  Current Spectre executes `:action` effects through its own executor. Pulse
-  consumes the same generic lifecycle data but deliberately provides this
-  separate boundary. The returned state is immutable; the host persists it
-  through its configured Spectre state adapter before/after execution.
+  Stack-installed Agents register `Spectre.Pulse.EffectExecutor`, so new code
+  uses the canonical `Spectre.execute/3` boundary. `execute/3` and
+  `execute_turn/2` delegate to that durable boundary; `execute_pending/3`
+  delegates to the pure `Spectre.Execution` workflow and leaves persistence
+  to its caller. Pulse owns no parallel lifecycle.
   """
 
   alias Spectre.Pulse.Config
@@ -18,23 +19,8 @@ defmodule Spectre.Pulse.Executor do
   @doc "Executes the pending Pulse effect in a Spectre result."
   @spec execute(module(), Spectre.Result.t(), keyword()) ::
           {:ok, Spectre.Result.t()} | {:error, term()}
-  def execute(agent, %Spectre.Result{state: %Spectre.State{} = state} = result, opts \\ []) do
-    with {:ok, executed} <-
-           execute_pending(
-             state,
-             agent,
-             Keyword.merge(opts, input: result.input, route: result.route)
-           ) do
-      {:ok,
-       %{
-         result
-         | state: executed.state,
-           effects: executed.effects,
-           events: result.events ++ executed.events,
-           metadata: Map.merge(result.metadata, executed.metadata)
-       }}
-    end
-  end
+  def execute(agent, %Spectre.Result{} = result, opts \\ []),
+    do: Spectre.execute(agent, result, opts)
 
   @doc "Executes the pending Pulse effect selected by a turn."
   @spec execute_turn(Spectre.Turn.t(), keyword()) ::
@@ -49,19 +35,16 @@ defmodule Spectre.Pulse.Executor do
   @spec execute_pending(Spectre.State.t(), module(), keyword()) ::
           {:ok, Spectre.Result.t()} | {:error, term()}
   def execute_pending(%Spectre.State{} = state, agent, opts \\ []) when is_atom(agent) do
-    case Spectre.State.pending_effect(state) do
-      nil ->
-        {:ok,
-         %Spectre.Result{
-           state: state,
-           input: Keyword.get(opts, :input),
-           route: Keyword.get(opts, :route),
-           events: [%{type: :pulse_effect_missing}]
-         }}
+    context = %Spectre.Context{
+      agent: agent,
+      input: Keyword.get(opts, :input),
+      state: state,
+      opts: opts,
+      assigns: Keyword.get(opts, :assigns, %{}),
+      route: Keyword.get(opts, :route)
+    }
 
-      %Spectre.Effect{} = effect ->
-        execute_effect(state, agent, effect, opts)
-    end
+    Spectre.Execution.execute_pending(state, context, opts)
   end
 
   @doc "Delivers an executable Pulse effect without changing Spectre state."
@@ -88,56 +71,6 @@ defmodule Spectre.Pulse.Executor do
         |> Keyword.put(:contact, resolution.contact)
 
       Network.deliver(config.network, envelope, network_opts)
-    end
-  end
-
-  @spec execute_effect(Spectre.State.t(), module(), Spectre.Effect.t(), keyword()) ::
-          {:ok, Spectre.Result.t()} | {:error, term()}
-  defp execute_effect(state, agent, effect, opts) do
-    with :ok <- validate_effect_origin(effect, agent) do
-      case deliver(agent, effect, state, opts) do
-        {:ok, receipt} ->
-          finish(state, effect, {:complete_effect, effect.id, receipt}, receipt, nil, opts)
-
-        {:error, %Error{} = error} ->
-          finish(state, effect, {:fail_effect, effect.id, error}, nil, error, opts)
-      end
-    end
-  end
-
-  @spec finish(
-          Spectre.State.t(),
-          Spectre.Effect.t(),
-          term(),
-          Spectre.Pulse.Receipt.t() | nil,
-          Error.t() | nil,
-          keyword()
-        ) :: {:ok, Spectre.Result.t()} | {:error, term()}
-  defp finish(state, effect, command, receipt, error, opts) do
-    with {:ok, transition} <- Spectre.Lifecycle.apply(state, command) do
-      terminal = transition.effect
-      completed? = terminal.status == :completed
-
-      event = %{
-        type: if(completed?, do: :pulse_delivery_accepted, else: :pulse_delivery_failed),
-        kind: :pulse,
-        name: :send,
-        effect_id: effect.id,
-        message_id: effect.id,
-        to: effect.payload.to,
-        receipt: receipt,
-        error: error
-      }
-
-      {:ok,
-       %Spectre.Result{
-         state: transition.to,
-         input: Keyword.get(opts, :input),
-         route: Keyword.get(opts, :route),
-         effects: [terminal],
-         events: [event],
-         metadata: %{pulse_execution_transition: transition}
-       }}
     end
   end
 
@@ -176,18 +109,4 @@ defmodule Spectre.Pulse.Executor do
 
   defp validate_effect(%Spectre.Effect{} = effect),
     do: {:error, Error.not_sent(:validation, {:unsupported_effect_kind, effect.kind})}
-
-  @spec validate_effect_origin(Spectre.Effect.t(), module()) :: :ok | {:error, term()}
-  defp validate_effect_origin(%Spectre.Effect{scope: nil} = effect, _agent),
-    do: {:error, {:effect_scope_missing, effect.id}}
-
-  defp validate_effect_origin(%Spectre.Effect{owner: nil}, _agent), do: :ok
-
-  defp validate_effect_origin(%Spectre.Effect{} = effect, agent) do
-    case Spectre.Definition.for_scope(agent, effect.scope) do
-      {:ok, definition} when definition.owner == effect.owner -> :ok
-      {:ok, definition} -> {:error, {:effect_owner_mismatch, effect.owner, definition.owner}}
-      {:error, reason} -> {:error, {:effect_scope_unresolvable, effect.scope, reason}}
-    end
-  end
 end

@@ -25,6 +25,7 @@ defmodule Spectre.Pulse.Stack do
       operations: [],
       actions: [],
       resources: [],
+      agent_extensions: [Spectre.Pulse.Extension],
       dsl: __MODULE__,
       metadata: %{role: :agent_protocol}
     ]

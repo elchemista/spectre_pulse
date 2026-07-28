@@ -89,7 +89,6 @@ defmodule Spectre.Pulse.EcosystemStackIntegrationTest.Agent do
   @moduledoc false
 
   use Spectre.Agent, stack: Spectre.Pulse.EcosystemStackIntegrationTest.Stack
-  use Spectre.Pulse
 end
 
 defmodule Spectre.Pulse.EcosystemStackIntegrationTest do
@@ -121,9 +120,15 @@ defmodule Spectre.Pulse.EcosystemStackIntegrationTest do
     assert pulse.config.directory == Adapters.Directory
   end
 
-  test "binds the complete Stack to the engine without implicit runtime ownership" do
-    assert Spectre.Definition.fetch!(Agent).stack == Stack
-    assert {:ok, []} = Runtime.child_specs(Stack)
+  test "binds every package adapter and exposes caller-owned runtime resources" do
+    agent_definition = Spectre.Definition.fetch!(Agent)
+    assert agent_definition.stack == Stack
+
+    assert Enum.map(agent_definition.extensions, & &1.id) ==
+             [:prism, :kinetic, :mnemonic, :directive, :lens, :beam, :pulse]
+
+    assert {:ok, [lens_runtime]} = Runtime.child_specs(Stack)
+    assert {SpectreLens.Runtime, :start_link, [[driver: Adapters.Browser]]} = lens_runtime.start
 
     for {service, package} <- [
           kinetic: :kinetic,

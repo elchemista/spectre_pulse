@@ -8,6 +8,7 @@ defmodule Spectre.Pulse.Endpoint do
 
   alias Spectre.Pulse.Envelope
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.Config
   alias Spectre.Pulse.Inbound
   alias Spectre.Pulse.Inbound.Result
   alias Spectre.Pulse.InboundContext
@@ -80,7 +81,7 @@ defmodule Spectre.Pulse.Endpoint do
 
   @spec pulse_agent?(module()) :: boolean()
   defp pulse_agent?(target) when is_atom(target) do
-    Code.ensure_loaded?(target) and function_exported?(target, :__spectre_pulse__, 0)
+    Code.ensure_loaded?(target) and match?({:ok, %Config{}}, Config.fetch(target))
   end
 
   @spec normalize(endpoint_result(), Envelope.t(), keyword()) ::

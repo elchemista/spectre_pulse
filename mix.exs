@@ -31,43 +31,35 @@ defmodule SpectrePulse.MixProject do
   defp deps do
     [
       # Pulse deliberately depends on Spectre, never the other way around.
-      {:spectre, github: "elchemista/spectre", ref: "b39b0b1e77d685c0e497cd64d7f16f20d3c1c846"},
-      {:spectre_beam,
-       github: "elchemista/spectre_beam",
-       ref: "0ea43a2ef2bd3d5f291c585c473758ce7db1b531",
-       only: :test,
-       runtime: false},
-      {:spectre_directive,
-       github: "elchemista/spectre_directive",
-       ref: "b7b1d4a4f4f60604a0f9b3f75f468d8513bc7dce",
-       only: :test,
-       runtime: false},
-      {:spectre_kinetic,
-       github: "elchemista/spectre_kinetic",
-       ref: "0719f7ce26047078e0816680d01e592993365a94",
-       only: :test,
-       runtime: false},
-      {:spectre_lens,
-       github: "elchemista/spectre_lens",
-       ref: "9066054f91d4c163ced0ec4ccefb81108ffdae10",
-       only: :test,
-       runtime: false},
-      {:spectre_mnemonic,
-       github: "elchemista/spectre_mnemonic",
-       ref: "b460a8a1c6d8450464653e45a12a4f5e102988ef",
-       only: :test,
-       runtime: false},
-      {:spectre_prism,
-       github: "elchemista/spectre_prism",
-       ref: "5754931ac224470378f5e0a32f9e480fdbcb6ade",
-       only: :test,
-       runtime: false},
+      ecosystem_dep(:spectre, "SPECTRE_PATH", "spectre"),
+      ecosystem_test_dep(:spectre_beam, "SPECTRE_BEAM_PATH", "spectre_beam"),
+      ecosystem_test_dep(
+        :spectre_directive,
+        "SPECTRE_DIRECTIVE_PATH",
+        "spectre_directive"
+      ),
+      ecosystem_test_dep(:spectre_kinetic, "SPECTRE_KINETIC_PATH", "spectre_kinetic"),
+      ecosystem_test_dep(:spectre_lens, "SPECTRE_LENS_PATH", "spectre_lens"),
+      ecosystem_test_dep(:spectre_mnemonic, "SPECTRE_MNEMONIC_PATH", "spectre_mnemonic"),
+      ecosystem_test_dep(:spectre_prism, "SPECTRE_PRISM_PATH", "spectre_prism"),
       {:jason, "~> 1.4"},
       {:req, "~> 0.5"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
+  end
+
+  defp ecosystem_dep(name, env, repository) do
+    case System.get_env(env) do
+      path when is_binary(path) and path != "" -> {name, path: Path.expand(path)}
+      _other -> {name, github: "elchemista/#{repository}", branch: "feature/v0.1.2-stack"}
+    end
+  end
+
+  defp ecosystem_test_dep(name, env, repository) do
+    {^name, options} = ecosystem_dep(name, env, repository)
+    {name, Keyword.merge(options, only: :test, runtime: false)}
   end
 
   defp package do

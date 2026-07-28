@@ -10,6 +10,7 @@ defmodule Spectre.Pulse.Runtime do
 
   use GenServer
 
+  alias Spectre.Pulse.Config
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Fabric
   alias Spectre.Pulse.Local
@@ -42,7 +43,7 @@ defmodule Spectre.Pulse.Runtime do
     with :ok <- validate_options(opts),
          {:ok, transports} <- normalize_transports(Keyword.get(opts, :transports, [])),
          :ok <- register_transports(transports),
-         agents <- discover_agents(),
+         {:ok, agents} <- discover_agents(),
          {:ok, owned_subscriptions} <- subscribe_agents(agents) do
       {:ok,
        %{
@@ -132,7 +133,7 @@ defmodule Spectre.Pulse.Runtime do
     end)
   end
 
-  @spec discover_agents() :: [module()]
+  @spec discover_agents() :: {:ok, [module()]} | {:error, Error.t()}
   defp discover_agents do
     loaded_modules =
       :code.all_loaded()
@@ -148,15 +149,30 @@ defmodule Spectre.Pulse.Runtime do
         List.wrap(Application.spec(application, :modules))
       end)
 
-    (loaded_modules ++ application_modules)
+    loaded_modules
+    |> Kernel.++(application_modules)
     |> Enum.uniq()
-    |> Enum.filter(&pulse_agent?/1)
     |> Enum.sort()
+    |> Enum.reduce_while({:ok, []}, &discover_agent/2)
+    |> case do
+      {:ok, agents} -> {:ok, Enum.reverse(agents)}
+      {:error, %Error{} = error} -> {:error, error}
+    end
   end
 
-  @spec pulse_agent?(module()) :: boolean()
-  defp pulse_agent?(module) when is_atom(module) do
-    Code.ensure_loaded?(module) and function_exported?(module, :__spectre_pulse__, 0)
+  @spec discover_agent(module(), {:ok, [module()]}) ::
+          {:cont, {:ok, [module()]}} | {:halt, {:error, Error.t()}}
+  defp discover_agent(module, {:ok, agents}) do
+    case Config.fetch(module) do
+      {:ok, %Config{}} ->
+        {:cont, {:ok, [module | agents]}}
+
+      {:error, %Error{reason: {:agent_not_pulse_enabled, ^module}}} ->
+        {:cont, {:ok, agents}}
+
+      {:error, %Error{} = error} ->
+        {:halt, {:error, error}}
+    end
   end
 
   @spec subscribe_agents([module()]) :: {:ok, [String.t()]} | {:error, Error.t()}

@@ -291,7 +291,7 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
     assert id == pending.id
   end
 
-  test "executor completes successful delivery and preserves result context", %{
+  test "executor delegates successful delivery to the canonical Spectre lifecycle", %{
     input: input,
     context: context
   } do
@@ -317,17 +317,16 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
     assert [%Spectre.Effect{status: :completed, result: %Spectre.Pulse.Receipt{}}] =
              executed.effects
 
-    assert Enum.any?(executed.events, &(&1.type == :before_execution))
-    assert Enum.any?(executed.events, &(&1.type == :pulse_delivery_accepted))
+    assert [%{type: :effect_completed, kind: :pulse, name: :send}] = executed.events
     assert executed.metadata.before
-    assert executed.metadata.pulse_execution_transition
+    assert executed.metadata.execution_transition
 
     assert_receive {:effect_delivered, envelope}
     assert envelope.id == hd(executed.effects).id
     assert envelope.payload.type == "effects.perform"
 
     assert {:ok, missing} = Executor.execute_pending(%Spectre.State{}, Agent, input: input)
-    assert [%{type: :pulse_effect_missing}] = missing.events
+    assert [%{type: :effect_missing}] = missing.events
 
     empty_result = %Spectre.Result{state: %Spectre.State{}, input: input}
     assert {:ok, %Spectre.Result{}} = Executor.execute(Agent, empty_result)
@@ -375,7 +374,9 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
 
     assert {:ok, failed} = Executor.execute_pending(staged.state, Agent)
     assert [%Spectre.Effect{status: :failed, error: %Error{}}] = failed.effects
-    assert [%{type: :pulse_delivery_failed, error: %Error{}}] = failed.events
+
+    assert [%{type: :effect_failed, kind: :pulse, name: :send, error: %Error{}}] =
+             failed.events
   end
 
   test "executor rejects policy, status, kind and origin violations", %{
@@ -409,13 +410,13 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
 
     assert effect_id == effect.id
 
-    assert {:error, {:effect_owner_mismatch, String, Agent}} =
+    assert {:error, {:effect_owner_mismatch, ^effect_id, String, Agent}} =
              Executor.execute_pending(
                %{staged.state | pending_effects: [%{effect | owner: String}]},
                Agent
              )
 
-    assert {:error, {:effect_scope_unresolvable, {:skill, :missing}, _reason}} =
+    assert {:error, {:effect_scope_unresolvable, ^effect_id, {:skill, :missing}, _reason}} =
              Executor.execute_pending(
                %{staged.state | pending_effects: [%{effect | scope: {:skill, :missing}}]},
                Agent
@@ -423,7 +424,14 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
   end
 
   test "DSL rewrites pulse calls, route evidence and leaves unrelated AST untouched" do
-    assert {:run, _, [:__spectre_pulse_stage__, [spectre_pulse: [to: :receiver]]]} =
+    assert {:run, _,
+            [
+              :stage,
+              [
+                handler_owner: Spectre.Pulse.Handler,
+                spectre_pulse: [to: :receiver]
+              ]
+            ]} =
              DSL.rewrite(quote(do: pulse(:receiver)))
 
     rewritten =
@@ -435,7 +443,7 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
         end
       )
 
-    assert Macro.to_string(rewritten) =~ "__spectre_pulse_stage__"
+    assert Macro.to_string(rewritten) =~ "Spectre.Pulse.Handler"
 
     opts = DSL.rewrite_route_opts(pulse: "effects.perform", regex: ~r/effects/)
     assert {:pulse_type, "effects.perform"} in opts[:checks]

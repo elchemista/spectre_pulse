@@ -119,13 +119,19 @@ end
 
 defmodule MyApp.Agent do
   use Spectre.Agent, stack: MyApp.AI
-  use Spectre.Pulse
 end
 ```
 
-The compiled Stack contains no PID, socket, credential, or connection. The
-host still starts `{Spectre.Pulse, ...}` explicitly until Pulse runtime
-resources become independently scopeable.
+Selecting the Stack automatically binds Pulse configuration, the `pulse(...)`
+Flow handler, and the `:pulse` effect executor. A second
+`use Spectre.Pulse` is not required for outbound protocol behavior. Use it only
+when the Agent also needs the optional `pulsing`, `identity`, `contact`,
+`advertise`, or inbound authoring DSL.
+
+The compiled Stack contains no PID, socket, credential, or connection.
+Automatic local inbound subscriptions still require the host to start
+`{Spectre.Pulse, ...}` explicitly until Pulse runtime resources become
+independently scopeable.
 
 ## Quick start: two Agents, no routes in Agent code
 
@@ -215,9 +221,10 @@ Run Anna and explicitly execute the staged side effect:
 effect.payload.to
 # => "spectre://acme/tao"
 
-# Persist staged_result.state here when the application requires durability.
-{:ok, executed_turn} = Spectre.Pulse.execute_turn(turn)
-{:completed, completed_effect, final_result} = executed_turn.decision
+# The generic core executor owns policy, durable two-commit lifecycle,
+# idempotency, and terminal state.
+{:ok, final_result} = Spectre.execute(MyApp.Anna, staged_result)
+[%Spectre.Effect{status: :completed} = completed_effect] = final_result.effects
 
 completed_effect.result.via
 # => :local
@@ -238,7 +245,8 @@ mix run examples/local_agents.exs
 
 ## Define a Pulse-enabled Agent
 
-`use Spectre.Pulse` must follow `use Spectre.Agent`:
+When Agent-local identity, contacts, advertisements, or inbound route DSL are
+needed, `use Spectre.Pulse` follows `use Spectre.Agent`:
 
 ```elixir
 defmodule MyApp.Anna do
@@ -380,14 +388,18 @@ WebSocket, REST, or gRPC requires no Agent change.
 {:ok, turn} = Spectre.turn(MyApp.Anna, "research:nautical market")
 {:needs, %Spectre.Effect{kind: :pulse} = effect, _result} = turn.decision
 
-# This is the explicit side-effect boundary.
-{:ok, executed_turn} = Spectre.Pulse.execute_turn(turn)
-{:completed, completed_effect, result} = executed_turn.decision
+# This is the canonical explicit side-effect boundary.
+{:ok, result} = Spectre.execute(MyApp.Anna, turn.result)
+[%Spectre.Effect{status: :completed} = completed_effect] = result.effects
 ```
 
-The host must persist the staged state before delivery and persist the returned
-terminal state afterwards, using the same durability strategy it uses for
-other Spectre effects. Pulse itself has no store.
+`Spectre.execute/3` persists the staged state before delivery and the terminal
+state afterwards through Spectre's ordinary two-commit workflow. Pulse itself
+has no store or parallel lifecycle. `Spectre.Pulse.execute/3` and
+`execute_turn/2` are thin aliases for existing applications; new code can call
+`Spectre.execute/3` directly. The lower-level
+`Spectre.Pulse.Executor.execute_pending/3` is pure and leaves persistence to
+its caller.
 
 `expect:` adds only a pure `%Spectre.Pulse.Expectation{}` to the sender's
 `Spectre.State`. It does not create a remote task or timer:
@@ -746,15 +758,26 @@ For example, connection refusal before an HTTP request is written is
 silently duplicating a non-idempotent request.
 
 ```elixir
-case Spectre.Pulse.execute_turn(turn) do
-  {:ok, executed_turn} ->
-    persist_terminal_state(executed_turn)
+case Spectre.execute(MyApp.Anna, turn.result) do
+  {:ok, %{effects: [%Spectre.Effect{status: :completed}]} = executed_result} ->
+    persist_terminal_state(executed_result)
 
-  {:error, %Spectre.Pulse.Error{outcome: :not_sent} = error} ->
+  {:ok,
+   %{effects: [%Spectre.Effect{
+     status: :failed,
+     error: %Spectre.Pulse.Error{outcome: :not_sent} = error
+   }]}} ->
     schedule_retry(error.message_id)
 
-  {:error, %Spectre.Pulse.Error{outcome: :outcome_unknown} = error} ->
+  {:ok,
+   %{effects: [%Spectre.Effect{
+     status: :failed,
+     error: %Spectre.Pulse.Error{outcome: :outcome_unknown} = error
+   }]}} ->
     reconcile_before_retry(error.message_id)
+
+  {:error, reason} ->
+    handle_execution_boundary_failure(reason)
 end
 ```
 
