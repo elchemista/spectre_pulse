@@ -387,6 +387,8 @@ WebSocket, REST, or gRPC requires no Agent change.
 ```elixir
 {:ok, turn} = Spectre.turn(MyApp.Anna, "research:nautical market")
 {:needs, %Spectre.Effect{kind: :pulse} = effect, _result} = turn.decision
+{:awaiting, ref} = turn.observable
+%Spectre.Invocation{ref: ^ref, operation: {:pulse, :send}} = turn.boundary
 
 # This is the canonical explicit side-effect boundary.
 {:ok, result} = Spectre.execute(MyApp.Anna, turn.result)
@@ -437,9 +439,16 @@ Pulse:
 1. validates version, UUIDv7, addresses, act, payload type, and limits;
 2. compares `Envelope.from` with the transport-authenticated identity;
 3. checks the recipient and application authorization callback;
-4. creates a `Spectre.Input` with trusted facts under `input.meta.pulse`;
-5. calls `Spectre.turn/3` with `turn_id: envelope.id`;
+4. creates a `Spectre.Input` with trusted facts under `input.meta.pulse` and
+   a provider-neutral `input.source`;
+5. calls `Spectre.turn/3` with `turn_id: envelope.id`, causation set to the
+   message id, and `relates_to` carried only as correlation;
 6. returns the normal Spectre turn and a technical receipt.
+
+`relates_to` never implies Run resumption. Pulse starts an ordinary turn.
+The `execute_turn/2` compatibility helper returns a fresh projection after
+execution and never reuses the consumed Invocation boundary. Resolving a
+reference to an owned Run belongs to the host/Instance layer.
 
 Route an inbound payload deterministically with `pulse:`:
 

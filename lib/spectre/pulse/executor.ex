@@ -22,7 +22,13 @@ defmodule Spectre.Pulse.Executor do
   def execute(agent, %Spectre.Result{} = result, opts \\ []),
     do: Spectre.execute(agent, result, opts)
 
-  @doc "Executes the pending Pulse effect selected by a turn."
+  @doc """
+  Executes the pending Pulse effect selected by a local Turn.
+
+  This compatibility helper returns a fresh Turn projection. A caller that
+  owns a resumable Run must execute its Invocation through
+  `Spectre.Runtime.resume/3` instead.
+  """
   @spec execute_turn(Spectre.Turn.t(), keyword()) ::
           {:ok, Spectre.Turn.t()} | {:error, term()}
   def execute_turn(%Spectre.Turn{} = turn, opts \\ []) do

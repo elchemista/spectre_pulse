@@ -109,9 +109,11 @@ defmodule Spectre.Pulse.SpectreIntegrationTest do
     assert inbound.input.meta.pulse.message_id == envelope.id
     assert inbound.input.meta.pulse.authenticated
     assert inbound.input.meta.pulse.type == "research.perform"
-    assert inbound.turn.opts[:turn_id] == envelope.id
     assert {:reply, result} = inbound.turn.decision
     assert result.reply_text == "accepted:research.perform"
+    assert result.metadata.runtime_identity.turn_id == envelope.id
+    assert {:reply, "accepted:research.perform", ref} = inbound.turn.observable
+    assert %Spectre.Run.Boundary{kind: :reply, ref: ^ref} = inbound.turn.boundary
   end
 
   test "declared sender cannot differ from transport-authenticated identity" do
@@ -133,9 +135,17 @@ defmodule Spectre.Pulse.SpectreIntegrationTest do
   test "pulse DSL stages a generic effect, tracks expectation, then executes explicitly" do
     assert {:ok, turn} = Spectre.turn(Sender, "delegate:boats")
     assert {:needs, effect, staged_result} = turn.decision
+    assert {:awaiting, ref} = turn.observable
+
+    assert %Spectre.Invocation{
+             ref: ^ref,
+             operation: {:pulse, :send},
+             idempotency_key: idempotency_key
+           } = turn.boundary
 
     assert effect.kind == :pulse
     assert effect.name == :send
+    assert idempotency_key == Spectre.Effect.idempotency_key(effect)
     assert effect.payload.to == "spectre://acme/tao"
     assert effect.payload.act == :request
     assert effect.payload.type == "research.perform"
@@ -147,6 +157,18 @@ defmodule Spectre.Pulse.SpectreIntegrationTest do
 
     assert {:ok, executed_turn} = Spectre.Pulse.execute_turn(turn)
     assert {:completed, completed, executed_result} = executed_turn.decision
+    assert {:reply, output, completed_ref} = executed_turn.observable
+    assert output == executed_turn.result.reply_text
+    assert executed_turn.ref == completed_ref
+
+    assert %Spectre.Run.Boundary{
+             kind: :reply,
+             ref: ^completed_ref,
+             output: ^output
+           } = executed_turn.boundary
+
+    refute executed_turn.boundary == turn.boundary
+    refute completed_ref == turn.ref
     assert completed.kind == :pulse
     assert completed.status == :completed
     assert %Receipt{message_id: message_id, via: :local, route_id: route_id} = completed.result
