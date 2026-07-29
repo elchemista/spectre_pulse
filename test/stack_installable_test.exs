@@ -26,12 +26,14 @@ defmodule Spectre.Pulse.StackInstallableTest.Transport do
 
   @behaviour Spectre.Pulse.Transport
 
+  alias Spectre.Pulse.Receipt
+
   @impl true
   def deliver(route, envelope, _opts) do
     send(route.target, {:stack_pulse_delivered, envelope})
 
     {:ok,
-     Spectre.Pulse.Receipt.accepted(envelope.id,
+     Receipt.accepted(envelope.id,
        via: :stack_test,
        route_id: route.id
      )}

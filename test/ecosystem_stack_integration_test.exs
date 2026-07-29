@@ -128,7 +128,7 @@ defmodule Spectre.Pulse.EcosystemStackIntegrationTest do
              [:prism, :kinetic, :mnemonic, :directive, :lens, :beam, :pulse]
 
     assert {:ok, [lens_runtime]} = Runtime.child_specs(Stack)
-    assert {SpectreLens.Runtime, :start_link, [[driver: Adapters.Browser]]} = lens_runtime.start
+    assert {SpectreLens.Runtime, :start_link, [[backend: Adapters.Browser]]} = lens_runtime.start
 
     for {service, package} <- [
           kinetic: :kinetic,

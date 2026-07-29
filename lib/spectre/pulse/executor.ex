@@ -2,11 +2,11 @@ defmodule Spectre.Pulse.Executor do
   @moduledoc """
   Thin execution aliases for `%Spectre.Effect{kind: :pulse}`.
 
-  Stack-installed Agents register `Spectre.Pulse.EffectExecutor`, so new code
-  uses the canonical `Spectre.execute/3` boundary. `execute/3` and
-  `execute_turn/2` delegate to that durable boundary; `execute_pending/3`
-  delegates to the pure `Spectre.Execution` workflow and leaves persistence
-  to its caller. Pulse owns no parallel lifecycle.
+  Stack-installed Agents register Pulse's effect executor, so new code uses
+  the canonical `Spectre.execute/3` boundary. `execute/3` and `execute_turn/2`
+  delegate to that durable boundary; `execute_pending/3` delegates to the pure
+  `Spectre.Execution` workflow and leaves persistence to its caller. Pulse
+  owns no parallel lifecycle.
   """
 
   alias Spectre.Pulse.Config
