@@ -19,6 +19,24 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest.WebSocketSender do
   end
 end
 
+defmodule Spectre.Pulse.TransportAdaptersErrorsTest.ReqAdapter do
+  @moduledoc false
+
+  @response_key {__MODULE__, :response}
+
+  def respond(response) do
+    Process.put(@response_key, response)
+    __MODULE__
+  end
+
+  def run(request) do
+    case Process.delete(@response_key) do
+      nil -> raise "missing test Req response"
+      response -> {request, response}
+    end
+  end
+end
+
 defmodule Spectre.Pulse.TransportAdaptersErrorsTest.TargetAgent do
   use Spectre.Agent
   use Spectre.Pulse
@@ -54,6 +72,7 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
 
   alias __MODULE__.BroadcastAdapter
   alias __MODULE__.PublishAdapter
+  alias __MODULE__.ReqAdapter
   alias __MODULE__.TargetAgent
   alias __MODULE__.WebSocketSender
 
@@ -167,7 +186,7 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
     assert {:error, %Error{outcome: :outcome_unknown, reason: ^raw_error}} =
              REST.deliver(route, envelope,
                req_options: [
-                 adapter: fn request -> {request, raw_error} end,
+                 adapter: ReqAdapter.respond(raw_error),
                  retry: false
                ]
              )
@@ -636,11 +655,11 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
   end
 
   defp adapter(status, body) do
-    fn request -> {request, %Req.Response{status: status, body: body}} end
+    ReqAdapter.respond(%Req.Response{status: status, body: body})
   end
 
   defp error_adapter(reason) do
-    fn request -> {request, %Req.TransportError{reason: reason}} end
+    ReqAdapter.respond(%Req.TransportError{reason: reason})
   end
 
   defp http_server(status) do

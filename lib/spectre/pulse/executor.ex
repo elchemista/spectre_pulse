@@ -2,11 +2,11 @@ defmodule Spectre.Pulse.Executor do
   @moduledoc """
   Thin execution aliases for `%Spectre.Effect{kind: :pulse}`.
 
-  Stack-installed Agents register `Spectre.Pulse.EffectExecutor`, so new code
-  uses the canonical `Spectre.execute/3` boundary. `execute/3` and
-  `execute_turn/2` delegate to that durable boundary; `execute_pending/3`
-  delegates to the pure `Spectre.Execution` workflow and leaves persistence
-  to its caller. Pulse owns no parallel lifecycle.
+  Stack-installed Agents register Pulse's effect executor, so new code uses
+  the canonical `Spectre.execute/3` boundary. `execute/3` and `execute_turn/2`
+  delegate to that durable boundary; `execute_pending/3` delegates to the pure
+  `Spectre.Execution` workflow and leaves persistence to its caller. Pulse
+  owns no parallel lifecycle.
   """
 
   alias Spectre.Pulse.Config
@@ -22,7 +22,13 @@ defmodule Spectre.Pulse.Executor do
   def execute(agent, %Spectre.Result{} = result, opts \\ []),
     do: Spectre.execute(agent, result, opts)
 
-  @doc "Executes the pending Pulse effect selected by a turn."
+  @doc """
+  Executes the pending Pulse effect selected by a local Turn.
+
+  This compatibility helper returns a fresh Turn projection. A caller that
+  owns a resumable Run must execute its Invocation through
+  `Spectre.Runtime.resume/3` instead.
+  """
   @spec execute_turn(Spectre.Turn.t(), keyword()) ::
           {:ok, Spectre.Turn.t()} | {:error, term()}
   def execute_turn(%Spectre.Turn{} = turn, opts \\ []) do

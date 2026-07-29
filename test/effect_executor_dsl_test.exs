@@ -361,6 +361,9 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
 
     turn = Spectre.Turn.from_result(Agent, input, [], staged)
 
+    assert {:awaiting, ref} = turn.observable
+    assert %Spectre.Invocation{ref: ^ref, operation: {:pulse, :send}} = turn.boundary
+
     route =
       Route.new!(
         address: "spectre://effects/receiver",
@@ -370,6 +373,18 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
 
     assert {:ok, executed_turn} = Executor.execute_turn(turn, routes: [route])
     assert {:completed, %Spectre.Effect{status: :completed}, _result} = executed_turn.decision
+    assert {:reply, output, completed_ref} = executed_turn.observable
+    assert output == executed_turn.result.reply_text
+    assert executed_turn.ref == completed_ref
+
+    assert %Spectre.Run.Boundary{
+             kind: :reply,
+             ref: ^completed_ref,
+             output: ^output
+           } = executed_turn.boundary
+
+    refute executed_turn.boundary == turn.boundary
+    refute completed_ref == turn.ref
     assert_receive {:effect_delivered, _envelope}
 
     assert {:ok, failed} = Executor.execute_pending(staged.state, Agent)

@@ -299,6 +299,22 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
 
     refute input.meta.pulse.authenticated
     assert input.text == "work"
+    assert input.source.kind == :pulse
+    assert input.source.reply_to == nil
+    assert input.meta.pulse_correlation_id == nil
+
+    related = %{
+      envelope
+      | id: Spectre.Identity.uuid7(),
+        relates_to: envelope.id
+    }
+
+    assert {:ok, correlated} =
+             Inbound.to_input(related, %{}, allow_unauthenticated: true)
+
+    assert correlated.source.reply_to == envelope.id
+    assert correlated.source.metadata.correlation_id == envelope.id
+    assert correlated.meta.pulse.correlation_id == envelope.id
 
     binary = %{envelope | payload: %{envelope.payload | data: "plain text"}}
 
@@ -510,6 +526,9 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
     assert peer.turn.opts[:conversation_id] ==
              {:pulse_peer, envelope.to, envelope.from}
 
+    assert peer.input.source.conversation_id ==
+             {:pulse_peer, envelope.to, envelope.from}
+
     assert {:ok, function_scope} =
              Inbound.receive(envelope, context,
                target_identity: envelope.to,
@@ -545,6 +564,25 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
                target_identity: envelope.to,
                state_scope: {Callbacks, :state_scope_error, []}
              )
+  end
+
+  test "relates_to is Run correlation, not implicit Run resumption", %{
+    envelope: envelope,
+    context: context
+  } do
+    correlated = %{
+      envelope
+      | id: Spectre.Identity.uuid7(),
+        relates_to: envelope.id
+    }
+
+    assert {:ok, %InboundResult{} = first} = Inbound.receive(envelope, context)
+    assert {:ok, %InboundResult{} = second} = Inbound.receive(correlated, context)
+
+    assert second.turn.opts[:correlation_id] == envelope.id
+    assert second.turn.opts[:causation_id] == correlated.id
+    assert second.input.source.metadata.correlation_id == envelope.id
+    refute second.turn.ref.run_id == first.turn.ref.run_id
   end
 
   test "inbound can target a supervised Spectre session process" do

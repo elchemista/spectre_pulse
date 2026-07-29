@@ -6,6 +6,7 @@ defmodule Spectre.Pulse.Inbound do
   scope and returns the ordinary `%Spectre.Turn{}` to the host.
   """
 
+  alias Spectre.Input.Source
   alias Spectre.Pulse.Address
   alias Spectre.Pulse.Config
   alias Spectre.Pulse.Envelope
@@ -35,6 +36,7 @@ defmodule Spectre.Pulse.Inbound do
            build_input(envelope, context, canonical_sender, authenticated?, merged_opts),
          {:ok, conversation_id} <-
            state_scope(config.state_scope, target, envelope, context),
+         input <- put_source_conversation(input, conversation_id),
          turn_opts <- turn_options(envelope, conversation_id, merged_opts),
          {:ok, turn} <- run_turn(target, input, turn_opts, envelope),
          receipt <-
@@ -267,12 +269,15 @@ defmodule Spectre.Pulse.Inbound do
   @spec build_input(Envelope.t(), InboundContext.t(), String.t(), boolean(), keyword()) ::
           {:ok, Spectre.Input.t()} | {:error, Error.t()}
   defp build_input(envelope, context, sender, authenticated?, opts) do
+    correlation_id = envelope.relates_to
+
     pulse_meta = %{
       message_id: envelope.id,
       from: sender,
       to: envelope.to,
       act: envelope.act,
       relates_to: envelope.relates_to,
+      correlation_id: correlation_id,
       type: envelope.payload.type,
       authenticated: authenticated?,
       binding: context.binding,
@@ -289,7 +294,19 @@ defmodule Spectre.Pulse.Inbound do
         pulse_type: envelope.payload.type,
         pulse_act: envelope.act,
         pulse_from: sender,
-        pulse_message_id: envelope.id
+        pulse_message_id: envelope.id,
+        pulse_correlation_id: correlation_id
+      },
+      source: %Source{
+        kind: :pulse,
+        mount: context.binding,
+        actor_id: sender,
+        reply_to: envelope.relates_to,
+        metadata: %{
+          message_id: envelope.id,
+          correlation_id: correlation_id,
+          protocol: 1
+        }
       }
     }
 
@@ -311,6 +328,16 @@ defmodule Spectre.Pulse.Inbound do
         {:error, Error.not_sent(:inbound, {:invalid_input_mapper, invalid})}
     end
   end
+
+  @spec put_source_conversation(Spectre.Input.t(), term()) :: Spectre.Input.t()
+  defp put_source_conversation(
+         %Spectre.Input{source: %Source{} = source} = input,
+         conversation_id
+       ) do
+    %{input | source: %{source | conversation_id: conversation_id}}
+  end
+
+  defp put_source_conversation(%Spectre.Input{} = input, _conversation_id), do: input
 
   @spec default_input_text(term()) :: String.t()
   defp default_input_text(data) when is_binary(data), do: data
@@ -387,6 +414,8 @@ defmodule Spectre.Pulse.Inbound do
     |> Keyword.put(:conversation_id, conversation_id)
     |> Keyword.put(:turn_id, envelope.id)
     |> Keyword.put(:trace_id, trace_id || envelope.id)
+    |> Keyword.put(:causation_id, envelope.id)
+    |> Keyword.put(:correlation_id, envelope.relates_to)
   end
 
   @spec run_turn(term(), Spectre.Input.t(), keyword(), Envelope.t()) ::

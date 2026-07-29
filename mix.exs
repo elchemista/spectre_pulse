@@ -1,7 +1,7 @@
 defmodule SpectrePulse.MixProject do
   use Mix.Project
 
-  @version "0.1.2"
+  @version "0.1.3"
   @source_url "https://github.com/elchemista/spectre_pulse"
 
   def project do
@@ -31,7 +31,7 @@ defmodule SpectrePulse.MixProject do
   defp deps do
     [
       # Pulse deliberately depends on Spectre, never the other way around.
-      ecosystem_dep(:spectre, "SPECTRE_PATH", "spectre"),
+      spectre_dep(),
       ecosystem_test_dep(:spectre_beam, "SPECTRE_BEAM_PATH", "spectre_beam"),
       ecosystem_test_dep(
         :spectre_directive,
@@ -53,8 +53,13 @@ defmodule SpectrePulse.MixProject do
   defp ecosystem_dep(name, env, repository) do
     case System.get_env(env) do
       path when is_binary(path) and path != "" -> {name, path: Path.expand(path)}
-      _other -> {name, github: "elchemista/#{repository}", branch: "feature/v0.1.2-stack"}
+      _other -> {name, github: "elchemista/#{repository}", branch: "feature/v0.1.3-run"}
     end
+  end
+
+  defp spectre_dep do
+    {:spectre, options} = ecosystem_dep(:spectre, "SPECTRE_PATH", "spectre")
+    {:spectre, Keyword.put(options, :override, true)}
   end
 
   defp ecosystem_test_dep(name, env, repository) do

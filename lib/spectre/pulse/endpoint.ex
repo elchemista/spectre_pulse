@@ -6,9 +6,9 @@ defmodule Spectre.Pulse.Endpoint do
   exporting `handle_pulse/2` or `handle_pulse/3`.
   """
 
+  alias Spectre.Pulse.Config
   alias Spectre.Pulse.Envelope
   alias Spectre.Pulse.Error
-  alias Spectre.Pulse.Config
   alias Spectre.Pulse.Inbound
   alias Spectre.Pulse.Inbound.Result
   alias Spectre.Pulse.InboundContext

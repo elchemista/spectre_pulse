@@ -26,12 +26,14 @@ defmodule Spectre.Pulse.StackInstallableTest.Transport do
 
   @behaviour Spectre.Pulse.Transport
 
+  alias Spectre.Pulse.Receipt
+
   @impl true
   def deliver(route, envelope, _opts) do
     send(route.target, {:stack_pulse_delivered, envelope})
 
     {:ok,
-     Spectre.Pulse.Receipt.accepted(envelope.id,
+     Receipt.accepted(envelope.id,
        via: :stack_test,
        route_id: route.id
      )}
@@ -79,9 +81,9 @@ defmodule Spectre.Pulse.StackInstallableTest do
   test "publishes the common Stack contract" do
     assert {:ok, package} = V1.verify_installable(Spectre.Pulse)
     assert package.id == :pulse
-    assert package.version == "0.1.2"
+    assert package.version == "0.1.3"
     assert package.contract == 1
-    assert package.spectre == "~> 0.1.2"
+    assert package.spectre == "~> 0.1.3"
     assert package.dsl == StackAdapter
     assert package.operations == []
     assert package.actions == []
