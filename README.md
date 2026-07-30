@@ -82,7 +82,7 @@ def deps do
   [
     {:spectre,
      github: "elchemista/spectre",
-     ref: "b39b0b1e77d685c0e497cd64d7f16f20d3c1c846"},
+     branch: "main"},
     {:spectre_pulse, github: "elchemista/spectre_pulse"}
   ]
 end
@@ -285,6 +285,30 @@ end
 
 No PID, URL, socket, transport, or `Route` belongs in the Agent. Anna knows
 only Tao's logical address and declared capabilities.
+
+## Route inbound work to a Spectre Instance
+
+Pulse 0.1.4 can hand an authenticated envelope to the core Instance selected
+by an explicit `AgentRef + Subject`. The trusted host or transport supplies
+the Subject and the supervisor; Pulse never infers a Subject from an address,
+sender name, or message:
+
+```elixir
+{:ok, inbound} =
+  Spectre.Pulse.receive(envelope, %{
+    authenticated_identity: envelope.from,
+    target: MyApp.Tao,
+    subject: Spectre.Subject.new(customer_id),
+    instance_supervisor: MyApp.SpectreSupervisor
+  })
+
+%Spectre.Instance.Ref{} = Spectre.Instance.ref(inbound.target)
+```
+
+The Subject-scoped core Instance owns state, mailbox fairness, and all Runs.
+Pulse only authenticates, maps, transports, and resolves the destination. If
+`:subject` is omitted, the existing module/process target behavior is
+preserved.
 
 `identity/1` is optional. When omitted, Pulse assigns the module a stable
 128-bit logical address:
