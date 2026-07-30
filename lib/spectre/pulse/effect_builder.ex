@@ -11,8 +11,10 @@ defmodule Spectre.Pulse.EffectBuilder do
   @spec stage(module(), Spectre.Input.t(), Spectre.Context.t(), keyword()) ::
           {:ok, Spectre.Result.t()} | {:error, term()}
   def stage(agent, %Spectre.Input{} = input, %Spectre.Context{} = ctx, opts) do
+    run_id = Spectre.Context.lifecycle_run_id(ctx)
+
     with {:ok, config} <- Config.fetch(agent),
-         :ok <- ensure_no_pending_effect(ctx.state),
+         :ok <- ensure_no_pending_effect(ctx.state, run_id),
          {:ok, to_ref} <- contextual_recipient(Keyword.fetch(opts, :to), input),
          {:ok, resolution} <- resolve_destination(config, ctx.state, to_ref, ctx.opts),
          {:ok, data} <- build_data(agent, input, ctx, opts),
@@ -21,14 +23,16 @@ defmodule Spectre.Pulse.EffectBuilder do
          {:ok, relates_to} <- contextual_relation(Keyword.get(opts, :relates_to), input),
          {:ok, type} <- fetch_type(opts),
          effect <-
-           build_effect(resolution.address, to_ref, act, type, data, relates_to, ctx, opts),
+           resolution.address
+           |> build_effect(to_ref, act, type, data, relates_to, ctx, opts)
+           |> Spectre.Effect.bind_run(run_id),
          {:ok, transition} <-
            Spectre.Lifecycle.apply(
              ctx.state,
              {:stage_effect, effect, Keyword.get(opts, :policy)}
            ) do
       state = maybe_track(transition.to, effect, to_ref, opts)
-      staged = Spectre.State.pending_effect(state)
+      staged = Spectre.State.pending_effect(state, run_id)
 
       events =
         [
@@ -248,9 +252,10 @@ defmodule Spectre.Pulse.EffectBuilder do
     end
   end
 
-  @spec ensure_no_pending_effect(Spectre.State.t()) :: :ok | {:error, term()}
-  defp ensure_no_pending_effect(state) do
-    case Spectre.State.pending_effect(state) do
+  @spec ensure_no_pending_effect(Spectre.State.t(), String.t() | nil) ::
+          :ok | {:error, term()}
+  defp ensure_no_pending_effect(state, run_id) do
+    case Spectre.State.pending_effect(state, run_id) do
       nil -> :ok
       effect -> {:error, {:pending_effect_not_resolved, effect.id, effect.status}}
     end

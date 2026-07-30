@@ -288,7 +288,7 @@ only Tao's logical address and declared capabilities.
 
 ## Route inbound work to a Spectre Instance
 
-Pulse 0.1.4 can hand an authenticated envelope to the core Instance selected
+Pulse 0.1.5 can hand an authenticated envelope to the core Instance selected
 by an explicit `AgentRef + Subject`. The trusted host or transport supplies
 the Subject and the supervisor; Pulse never infers a Subject from an address,
 sender name, or message:
@@ -309,6 +309,12 @@ The Subject-scoped core Instance owns state, mailbox fairness, and all Runs.
 Pulse only authenticates, maps, transports, and resolves the destination. If
 `:subject` is omitted, the existing module/process target behavior is
 preserved.
+
+Outbound Pulse Effects staged inside that Instance inherit the current
+`run_id`. Several subject Runs can therefore wait on independent Pulse
+Invocations or policy gates; completing one delivery leaves the other Runs'
+pending lifecycle untouched. Stateless calls and `Spectre.Session` keep the
+single pending Effect behavior.
 
 `identity/1` is optional. When omitted, Pulse assigns the module a stable
 128-bit logical address:

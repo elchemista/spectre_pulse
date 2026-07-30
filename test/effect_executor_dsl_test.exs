@@ -109,6 +109,67 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
     assert routed_effect.scope == :agent
   end
 
+  test "effect builder scopes independent Instance lifecycle by Run", %{
+    input: input,
+    context: context
+  } do
+    first_context = %{
+      context
+      | opts: [instance_run_lifecycle?: true, run_id: "pulse-run-first"]
+    }
+
+    assert {:ok, first} =
+             EffectBuilder.stage(Agent, input, first_context,
+               to: :receiver,
+               type: "effects.first",
+               policy: :confirm_send
+             )
+
+    first_effect = Spectre.State.pending_effect(first.state, "pulse-run-first")
+    first_awaitable = Spectre.State.open_policy_awaitable(first.state, "pulse-run-first")
+
+    assert first_effect.run_id == "pulse-run-first"
+    assert first_awaitable.run_id == "pulse-run-first"
+    assert first.effects == [first_effect]
+
+    second_context = %{
+      context
+      | state: first.state,
+        opts: [instance_run_lifecycle?: true, run_id: "pulse-run-second"]
+    }
+
+    assert {:ok, second} =
+             EffectBuilder.stage(Agent, input, second_context,
+               to: :receiver,
+               type: "effects.second",
+               policy: :confirm_send
+             )
+
+    second_effect = Spectre.State.pending_effect(second.state, "pulse-run-second")
+    second_awaitable = Spectre.State.open_policy_awaitable(second.state, "pulse-run-second")
+
+    assert second_effect.run_id == "pulse-run-second"
+    assert second_awaitable.run_id == "pulse-run-second"
+    assert second.effects == [second_effect]
+
+    assert Enum.map(second.state.pending_effects, & &1.run_id) == [
+             "pulse-run-first",
+             "pulse-run-second"
+           ]
+
+    assert second.state.awaitables
+           |> Enum.filter(&(&1.status == :open))
+           |> Enum.map(& &1.run_id) == ["pulse-run-first", "pulse-run-second"]
+
+    assert {:error, {:pending_effect_not_resolved, id, :waiting_policy}} =
+             EffectBuilder.stage(Agent, input, %{first_context | state: second.state},
+               to: :receiver,
+               type: "effects.duplicate"
+             )
+
+    assert id == first_effect.id
+  end
+
   test "effect builder supports named, anonymous and MFA data builders", %{
     input: input,
     context: context
