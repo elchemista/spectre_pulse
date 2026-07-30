@@ -24,3 +24,4 @@ spectre_pulse-*.tar
 
 *.md
 !README.md
+!CHANGELOG.md

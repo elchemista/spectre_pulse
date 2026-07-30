@@ -1,7 +1,7 @@
 defmodule SpectrePulse.MixProject do
   use Mix.Project
 
-  @version "0.1.3"
+  @version "0.1.4"
   @source_url "https://github.com/elchemista/spectre_pulse"
 
   def project do
@@ -52,26 +52,35 @@ defmodule SpectrePulse.MixProject do
 
   defp ecosystem_dep(name, env, repository) do
     case System.get_env(env) do
-      path when is_binary(path) and path != "" -> {name, path: Path.expand(path)}
-      _other -> {name, github: "elchemista/#{repository}", branch: "feature/v0.1.3-run"}
+      path when is_binary(path) and path != "" ->
+        {name, "~> 0.1.4", path: Path.expand(path)}
+
+      _other ->
+        {name, "~> 0.1.4",
+         github: "elchemista/#{repository}", branch: ecosystem_branch(repository)}
     end
   end
 
+  defp ecosystem_branch("spectre_kinetic"), do: "master"
+  defp ecosystem_branch(_repository), do: "main"
+
   defp spectre_dep do
-    {:spectre, options} = ecosystem_dep(:spectre, "SPECTRE_PATH", "spectre")
-    {:spectre, Keyword.put(options, :override, true)}
+    {:spectre, requirement, options} =
+      ecosystem_dep(:spectre, "SPECTRE_PATH", "spectre")
+
+    {:spectre, requirement, Keyword.put(options, :override, true)}
   end
 
   defp ecosystem_test_dep(name, env, repository) do
-    {^name, options} = ecosystem_dep(name, env, repository)
-    {name, Keyword.merge(options, only: :test, runtime: false)}
+    {^name, requirement, options} = ecosystem_dep(name, env, repository)
+    {name, requirement, Keyword.merge(options, only: :test, runtime: false)}
   end
 
   defp package do
     [
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib examples priv mix.exs README.md)
+      files: ~w(lib examples priv mix.exs README.md CHANGELOG.md)
     ]
   end
 
@@ -79,7 +88,7 @@ defmodule SpectrePulse.MixProject do
     [
       main: "readme",
       source_ref: "v#{@version}",
-      extras: ["README.md"],
+      extras: ["README.md", "CHANGELOG.md"],
       groups_for_modules: [
         Protocol: [
           Spectre.Pulse,

@@ -14,6 +14,10 @@ defmodule Spectre.Pulse.InboundContext do
     :target_identity,
     :resolver,
     :authorization,
+    :subject,
+    :instance_supervisor,
+    :instance_registry,
+    :instance_opts,
     verified: %{},
     metadata: %{}
   ]
@@ -22,10 +26,14 @@ defmodule Spectre.Pulse.InboundContext do
           authenticated_identity: String.t() | nil,
           binding: atom() | String.t() | nil,
           peer: term(),
-          target: module() | GenServer.server() | nil,
+          target: module() | Spectre.AgentRef.t() | GenServer.server() | nil,
           target_identity: String.t() | nil,
           resolver: term(),
           authorization: term(),
+          subject: Spectre.Subject.t() | term() | nil,
+          instance_supervisor: GenServer.server() | nil,
+          instance_registry: atom() | nil,
+          instance_opts: keyword() | nil,
           verified: map(),
           metadata: map()
         }

@@ -3,10 +3,15 @@ defmodule Spectre.Pulse.Inbound do
   Secure inbound bridge from a validated Pulse envelope to `Spectre.turn/3`.
 
   The bridge owns no session or state. It selects the host's Spectre state
-  scope and returns the ordinary `%Spectre.Turn{}` to the host.
+  scope and returns the ordinary `%Spectre.Turn{}` to the host. When the
+  trusted inbound context supplies an explicit `:subject`, it resolves or
+  starts the core `Spectre.Instance` for `AgentRef + Subject`; Pulse remains a
+  transport boundary and never owns the Instance, its Runs, or its state.
   """
 
+  alias Spectre.AgentRef
   alias Spectre.Input.Source
+  alias Spectre.Instance.Registry, as: InstanceRegistry
   alias Spectre.Pulse.Address
   alias Spectre.Pulse.Config
   alias Spectre.Pulse.Envelope
@@ -14,6 +19,7 @@ defmodule Spectre.Pulse.Inbound do
   alias Spectre.Pulse.Inbound.Result
   alias Spectre.Pulse.InboundContext
   alias Spectre.Pulse.Receipt
+  alias Spectre.Subject
 
   @typep callback_label :: :authorization | :input_mapper | :state_scope | :target_resolver
 
@@ -26,23 +32,25 @@ defmodule Spectre.Pulse.Inbound do
     with {:ok, envelope} <- Envelope.new(envelope, opts),
          {:ok, canonical_sender, authenticated?} <-
            authenticate_sender(envelope, context, opts),
-         {:ok, target} <- resolve_target(envelope.to, context, opts),
-         {:ok, config} <- target_config(target, context, opts),
+         {:ok, logical_target} <- resolve_target(envelope.to, context, opts),
+         {:ok, config} <- target_config(logical_target, context, opts),
          :ok <- ensure_recipient(envelope.to, config.identity),
          merged_opts <- Keyword.merge(config.inbound, opts),
          :ok <- allow_payload_type(envelope, merged_opts),
-         :ok <- authorize(envelope, context, target, merged_opts),
+         :ok <- authorize(envelope, context, logical_target, merged_opts),
          {:ok, input} <-
            build_input(envelope, context, canonical_sender, authenticated?, merged_opts),
          {:ok, conversation_id} <-
-           state_scope(config.state_scope, target, envelope, context),
+           state_scope(config.state_scope, logical_target, envelope, context),
          input <- put_source_conversation(input, conversation_id),
          turn_opts <- turn_options(envelope, conversation_id, merged_opts),
+         {:ok, target} <-
+           resolve_instance_target(logical_target, context, merged_opts, envelope),
          {:ok, turn} <- run_turn(target, input, turn_opts, envelope),
          receipt <-
            Receipt.accepted(envelope.id,
              via: context.binding,
-             metadata: %{target: inspect_target(target)}
+             metadata: %{target: inspect_target(logical_target)}
            ) do
       {:ok,
        %Result{
@@ -158,6 +166,9 @@ defmodule Spectre.Pulse.Inbound do
         explicit_target_config(context, opts)
     end
   end
+
+  defp target_config(%AgentRef{definition: agent}, context, opts),
+    do: target_config(agent, context, opts)
 
   defp target_config(_target, context, opts), do: explicit_target_config(context, opts)
 
@@ -412,10 +423,148 @@ defmodule Spectre.Pulse.Inbound do
     |> Keyword.get(:turn_opts, [])
     |> Keyword.merge(Keyword.take(opts, [:state, :assigns, :memory, :timeout]))
     |> Keyword.put(:conversation_id, conversation_id)
+    |> Keyword.put(:origin_conversation_id, conversation_id)
     |> Keyword.put(:turn_id, envelope.id)
     |> Keyword.put(:trace_id, trace_id || envelope.id)
     |> Keyword.put(:causation_id, envelope.id)
     |> Keyword.put(:correlation_id, envelope.relates_to)
+  end
+
+  @spec resolve_instance_target(
+          term(),
+          InboundContext.t(),
+          keyword(),
+          Envelope.t()
+        ) :: {:ok, term()} | {:error, Error.t()}
+  defp resolve_instance_target(target, context, opts, envelope) do
+    case Keyword.get(opts, :subject, context.subject) do
+      nil when is_struct(target, AgentRef) ->
+        {:error, Error.not_sent(:routing, :subject_required, message_id: envelope.id)}
+
+      nil ->
+        {:ok, target}
+
+      subject ->
+        resolve_explicit_instance(target, subject, context, opts, envelope)
+    end
+  end
+
+  @spec resolve_explicit_instance(
+          term(),
+          term(),
+          InboundContext.t(),
+          keyword(),
+          Envelope.t()
+        ) :: {:ok, pid()} | {:error, Error.t()}
+  defp resolve_explicit_instance(target, _subject, _context, _opts, envelope)
+       when is_pid(target) do
+    {:error, Error.not_sent(:routing, :logical_instance_target_required, message_id: envelope.id)}
+  end
+
+  defp resolve_explicit_instance(target, subject, context, opts, envelope) do
+    registry =
+      Keyword.get(
+        opts,
+        :instance_registry,
+        context.instance_registry || InstanceRegistry
+      )
+
+    supervisor =
+      Keyword.get(opts, :instance_supervisor, context.instance_supervisor)
+
+    instance_opts =
+      Keyword.get(opts, :instance_opts, context.instance_opts || [])
+
+    try do
+      agent_ref = normalize_agent_ref!(target)
+      subject = Subject.new(subject)
+
+      unless is_atom(registry) do
+        raise ArgumentError, "instance registry must be an atom"
+      end
+
+      unless Keyword.keyword?(instance_opts) do
+        raise ArgumentError, "instance options must be a keyword list"
+      end
+
+      validate_instance_options!(instance_opts)
+
+      case InstanceRegistry.lookup(agent_ref, subject, registry) do
+        {:ok, instance} ->
+          {:ok, instance}
+
+        {:error, :instance_not_found} when not is_nil(supervisor) ->
+          start_instance(supervisor, agent_ref, subject, registry, instance_opts, envelope)
+
+        {:error, :instance_not_found} ->
+          {:error, Error.not_sent(:routing, :instance_not_found, message_id: envelope.id)}
+      end
+    rescue
+      exception in ArgumentError ->
+        {:error,
+         Error.not_sent(:routing, {:invalid_instance_target, Exception.message(exception)},
+           message_id: envelope.id,
+           cause: exception
+         )}
+    catch
+      :exit, reason ->
+        {:error,
+         Error.not_sent(:routing, {:instance_registry_unavailable, reason},
+           message_id: envelope.id
+         )}
+    end
+  end
+
+  @spec start_instance(
+          GenServer.server(),
+          AgentRef.t(),
+          Subject.t(),
+          atom(),
+          keyword(),
+          Envelope.t()
+        ) :: {:ok, pid()} | {:error, Error.t()}
+  defp start_instance(supervisor, agent_ref, subject, registry, instance_opts, envelope) do
+    opts =
+      instance_opts
+      |> Keyword.put(:registry, registry)
+      |> Keyword.put_new(:idle, false)
+
+    case InstanceRegistry.ensure_started(supervisor, agent_ref, subject, opts) do
+      {:ok, instance} ->
+        {:ok, instance}
+
+      {:ok, instance, _info} ->
+        {:ok, instance}
+
+      {:error, reason} ->
+        {:error,
+         Error.not_sent(:routing, {:instance_start_failed, reason}, message_id: envelope.id)}
+
+      :ignore ->
+        {:error, Error.not_sent(:routing, :instance_start_ignored, message_id: envelope.id)}
+    end
+  end
+
+  @spec normalize_agent_ref!(module() | AgentRef.t()) :: AgentRef.t()
+  defp normalize_agent_ref!(%AgentRef{} = agent_ref), do: AgentRef.new(agent_ref)
+  defp normalize_agent_ref!(agent) when is_atom(agent), do: AgentRef.new(agent)
+
+  defp normalize_agent_ref!(target) do
+    raise ArgumentError,
+          "instance target must be a Spectre Agent module or AgentRef, got: #{inspect(target)}"
+  end
+
+  defp validate_instance_options!(instance_opts) do
+    allowed = [:idle, :shutdown, :max_runs, :max_tombstones, :restart]
+
+    case Keyword.keys(instance_opts) -- allowed do
+      [] ->
+        :ok
+
+      forbidden ->
+        raise ArgumentError,
+              "Pulse Instance options cannot set identity or state: #{inspect(forbidden)}"
+    end
   end
 
   @spec run_turn(term(), Spectre.Input.t(), keyword(), Envelope.t()) ::
@@ -445,6 +594,7 @@ defmodule Spectre.Pulse.Inbound do
   end
 
   @spec inspect_target(term()) :: String.t()
+  defp inspect_target(%AgentRef{} = target), do: AgentRef.key(target)
   defp inspect_target(target) when is_atom(target), do: Atom.to_string(target)
   defp inspect_target(target) when is_pid(target), do: inspect(target)
   defp inspect_target(_target), do: "host_target"
