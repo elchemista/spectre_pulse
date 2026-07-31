@@ -9,7 +9,7 @@ defmodule Spectre.Pulse.Stack do
 
   alias Spectre.Stack.DSL
 
-  @version "0.1.5"
+  @version "0.1.6"
 
   @doc false
   @spec manifest() :: keyword()

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "id": "018f0f3e-7b21-7a1c-8f42-123456789abc",
+  "from": "spectre://compatibility/sender",
+  "to": "spectre://compatibility/receiver",
+  "act": "request",
+  "relates_to": "018f0f3e-7b20-7fff-b123-abcdef012345",
+  "payload": {
+    "type": "compatibility.baseline",
+    "data": {
+      "release": "0.1.6",
+      "operation": "restore",
+      "attempt": 1
+    }
+  },
+  "metadata": {
+    "trace_id": "trace-pulse-0.1.6",
+    "fixture": true
+  }
+}
