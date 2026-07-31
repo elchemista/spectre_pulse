@@ -30,7 +30,7 @@
   "spectre": {:git, "https://github.com/elchemista/spectre.git", "aa328ae4fcc93ac2b831f5d75375835733688b86", [branch: "main"]},
   "spectre_beam": {:git, "https://github.com/elchemista/spectre_beam.git", "a5523a694f71c1b82292c6406b2a1f7c4e949485", [branch: "main"]},
   "spectre_directive": {:git, "https://github.com/elchemista/spectre_directive.git", "c89d2cd55e080768340501b9eb9b60a9898c8da2", [branch: "main"]},
-  "spectre_kinetic": {:git, "https://github.com/elchemista/spectre_kinetic.git", "fd7dd4e6163fc6ceea169f385e0c7f2af35e87bb", [branch: "master"]},
+  "spectre_kinetic": {:git, "https://github.com/elchemista/spectre_kinetic.git", "fd7dd4e6163fc6ceea169f385e0c7f2af35e87bb", [branch: "main"]},
   "spectre_lens": {:git, "https://github.com/elchemista/spectre_lens.git", "4aea0419c499baf0cf121e59c620dc38062e1c4b", [branch: "main"]},
   "spectre_mnemonic": {:git, "https://github.com/elchemista/spectre_mnemonic.git", "8ad558114caeac41862ad74d5625968f5c8adf88", [branch: "main"]},
   "spectre_prism": {:git, "https://github.com/elchemista/spectre_prism.git", "db4f8a807c9fba7b4d2efa0cd2d9c97c40a83ae1", [branch: "main"]},

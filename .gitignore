@@ -25,3 +25,4 @@ spectre_pulse-*.tar
 *.md
 !README.md
 !CHANGELOG.md
+!docs/PUBLIC_API.md

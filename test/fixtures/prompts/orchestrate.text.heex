@@ -1,4 +1,4 @@
 Use the recalled release context to plan the audit action.
 
 Recalled memory:
-<%= inspect(@memory) %>
+<%= Enum.map_join(@memory.moments, "\n", & &1.text) %>

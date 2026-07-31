@@ -407,7 +407,7 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
     {:ok, mnemonic_namespace: mnemonic_namespace}
   end
 
-  test "one Stack-bound agent executes the complete 0.1.5 ecosystem", context do
+  test "Pulse 0.1.6 remains compatible with the complete 0.1.5 ecosystem", context do
     assert Enum.map(Definition.fetch!(Stack).installations, fn installation ->
              {installation.package.id, installation.package.version}
            end) == [
@@ -417,7 +417,7 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
              directive: "0.1.5",
              lens: "0.1.5",
              beam: "0.1.5",
-             pulse: "0.1.5"
+             pulse: "0.1.6"
            ]
 
     assert {:ok, stack_runtime} =
@@ -429,7 +429,7 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
     assert_receive {:lens_instance_started, 1}
 
     namespace = context.mnemonic_namespace
-    conversation_id = "release-0.1.5-#{System.unique_integer([:positive])}"
+    conversation_id = "release-0.1.6-#{System.unique_integer([:positive])}"
     memory_marker = "Only notify after the release page reports ready."
 
     runtime_opts = [
@@ -440,7 +440,7 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
 
     assert {:ok, directive} =
              Spectre.Directive.new(
-               mission: "Validate and announce release 0.1.5",
+               mission: "Validate and announce release 0.1.6",
                success: "Every ecosystem boundary completes",
                mode: :autonomous,
                execution: :manual
@@ -578,10 +578,10 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
              Spectre.Directive.respond(
                directive,
                review.id,
-               {:complete_mission, %{release: "0.1.5", packages: 7}}
+               {:complete_mission, %{release: "0.1.6", packages: 7}}
              )
 
-    assert outcome == %{release: "0.1.5", packages: 7}
+    assert outcome == %{release: "0.1.6", packages: 7}
     assert finished.status == :completed
 
     Supervisor.stop(stack_runtime)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6 — 2026-07-31
+
+- Establish a recoverable consolidation baseline with an explicit normative
+  public API manifest and uniform release documentation.
+- Add no runtime functionality and make no intentional breaking API change.
+
 ## 0.1.5
 
 - Bind every outbound Pulse Effect and policy Awaitable to the owning

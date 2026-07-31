@@ -1,7 +1,7 @@
 defmodule SpectrePulse.MixProject do
   use Mix.Project
 
-  @version "0.1.5"
+  @version "0.1.6"
   @source_url "https://github.com/elchemista/spectre_pulse"
 
   def project do
@@ -17,6 +17,7 @@ defmodule SpectrePulse.MixProject do
       test_coverage: [summary: [threshold: 91]],
       package: package(),
       docs: docs(),
+      dialyzer: [plt_add_apps: [:mix]],
       deps: deps()
     ]
   end
@@ -51,8 +52,11 @@ defmodule SpectrePulse.MixProject do
   end
 
   defp ecosystem_dep(name, env, repository) do
-    case System.get_env(env) do
-      path when is_binary(path) and path != "" ->
+    case {System.get_env("SPECTRE_HEX_BUILD"), System.get_env(env)} do
+      {hex_build, _path} when hex_build in ["1", "true"] ->
+        {name, "~> 0.1.5"}
+
+      {_hex_build, path} when is_binary(path) and path != "" ->
         {name, "~> 0.1.5", path: Path.expand(path)}
 
       _other ->
@@ -61,26 +65,34 @@ defmodule SpectrePulse.MixProject do
     end
   end
 
-  defp ecosystem_branch("spectre_kinetic"), do: "master"
   defp ecosystem_branch(_repository), do: "main"
 
   defp spectre_dep do
-    {:spectre, requirement, options} =
-      ecosystem_dep(:spectre, "SPECTRE_PATH", "spectre")
+    case ecosystem_dep(:spectre, "SPECTRE_PATH", "spectre") do
+      {:spectre, requirement} ->
+        {:spectre, requirement}
 
-    {:spectre, requirement, Keyword.put(options, :override, true)}
+      {:spectre, requirement, options} ->
+        {:spectre, requirement, Keyword.put(options, :override, true)}
+    end
   end
 
   defp ecosystem_test_dep(name, env, repository) do
-    {^name, requirement, options} = ecosystem_dep(name, env, repository)
-    {name, requirement, Keyword.merge(options, only: :test, runtime: false)}
+    case ecosystem_dep(name, env, repository) do
+      {^name, requirement} ->
+        {name, requirement, only: :test, runtime: false}
+
+      {^name, requirement, options} ->
+        {name, requirement, Keyword.merge(options, only: :test, runtime: false)}
+    end
   end
 
   defp package do
     [
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib examples priv mix.exs README.md CHANGELOG.md)
+      maintainers: ["elchemista"],
+      files: ~w(lib examples priv docs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 
@@ -88,7 +100,13 @@ defmodule SpectrePulse.MixProject do
     [
       main: "readme",
       source_ref: "v#{@version}",
-      extras: ["README.md", "CHANGELOG.md"],
+      extras: [
+        "README.md",
+        "docs/ARCHITECTURE.md",
+        "docs/PUBLIC_API.md",
+        "CHANGELOG.md",
+        "LICENSE"
+      ],
       groups_for_modules: [
         Protocol: [
           Spectre.Pulse,

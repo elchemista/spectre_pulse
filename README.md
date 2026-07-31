@@ -3,6 +3,19 @@
 Spectre Pulse is a transport-independent protocol for communication between
 [Spectre](https://github.com/elchemista/spectre) agents.
 
+The exact `0.1.6` compatibility surface is published in the
+[public API manifest](docs/PUBLIC_API.md).
+
+## 0.1.6 Recoverable Baseline
+
+Version `0.1.6` is a consolidation-only release with no new runtime feature and
+no intentional breaking change. Elixir 1.19 on Erlang/OTP 28 is the initially
+guaranteed pair. Uniform CI runs format, warnings-as-errors compilation, tests,
+non-strict Credo, Dialyzer, ExDoc, and local package validation with no
+publication. The permanent
+Pulse v1 envelope fixture under `test/fixtures/compatibility/0.1.6` freezes the
+wire handoff used by future `0.2.0` work.
+
 Pulse does not coordinate agents. It gives autonomous agents a common,
 versioned envelope and a replaceable delivery boundary so they can coordinate
 themselves:
@@ -288,7 +301,7 @@ only Tao's logical address and declared capabilities.
 
 ## Route inbound work to a Spectre Instance
 
-Pulse 0.1.5 can hand an authenticated envelope to the core Instance selected
+Pulse 0.1.6 can hand an authenticated envelope to the core Instance selected
 by an explicit `AgentRef + Subject`. The trusted host or transport supplies
 the Subject and the supervisor; Pulse never infers a Subject from an address,
 sender name, or message:
