@@ -407,17 +407,17 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
     {:ok, mnemonic_namespace: mnemonic_namespace}
   end
 
-  test "Pulse 0.1.6 remains compatible with the complete 0.1.5 ecosystem", context do
+  test "Pulse 0.2.0 remains compatible with the complete 0.2.0 ecosystem", context do
     assert Enum.map(Definition.fetch!(Stack).installations, fn installation ->
              {installation.package.id, installation.package.version}
            end) == [
-             prism: "0.1.5",
-             kinetic: "0.1.5",
-             mnemonic: "0.1.5",
-             directive: "0.1.5",
-             lens: "0.1.5",
-             beam: "0.1.5",
-             pulse: "0.1.6"
+             prism: "0.2.0",
+             kinetic: "0.2.0",
+             mnemonic: "0.2.0",
+             directive: "0.2.0",
+             lens: "0.2.0",
+             beam: "0.2.0",
+             pulse: "0.2.0"
            ]
 
     assert {:ok, stack_runtime} =
@@ -429,7 +429,7 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
     assert_receive {:lens_instance_started, 1}
 
     namespace = context.mnemonic_namespace
-    conversation_id = "release-0.1.6-#{System.unique_integer([:positive])}"
+    conversation_id = "release-0.2.0-#{System.unique_integer([:positive])}"
     memory_marker = "Only notify after the release page reports ready."
 
     runtime_opts = [
@@ -440,7 +440,7 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
 
     assert {:ok, directive} =
              Spectre.Directive.new(
-               mission: "Validate and announce release 0.1.6",
+               mission: "Validate and announce release 0.2.0",
                success: "Every ecosystem boundary completes",
                mode: :autonomous,
                execution: :manual
@@ -578,10 +578,10 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
              Spectre.Directive.respond(
                directive,
                review.id,
-               {:complete_mission, %{release: "0.1.6", packages: 7}}
+               {:complete_mission, %{release: "0.2.0", packages: 7}}
              )
 
-    assert outcome == %{release: "0.1.6", packages: 7}
+    assert outcome == %{release: "0.2.0", packages: 7}
     assert finished.status == :completed
 
     Supervisor.stop(stack_runtime)

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+## 0.2.0 — 2026-08-01
+
+- Raise Pulse, Stack, and ecosystem dependency contracts to Spectre 0.2.0.
+- Verify all seven packages together through the full Agent ecosystem test.
+- Preserve protocol v1 and the permanent 0.1.6 envelope compatibility fixture.
+- Keep transport and connections host-owned while Spectre owns policy, Effect,
+  Run, Work, Vigil, and canonical persistence lifecycle.
+
 ## 0.1.6 — 2026-07-31
 
 - Establish a recoverable consolidation baseline with an explicit normative

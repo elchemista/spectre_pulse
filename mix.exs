@@ -1,7 +1,7 @@
 defmodule SpectrePulse.MixProject do
   use Mix.Project
 
-  @version "0.1.6"
+  @version "0.2.0"
   @source_url "https://github.com/elchemista/spectre_pulse"
 
   def project do
@@ -54,13 +54,13 @@ defmodule SpectrePulse.MixProject do
   defp ecosystem_dep(name, env, repository) do
     case {System.get_env("SPECTRE_HEX_BUILD"), System.get_env(env)} do
       {hex_build, _path} when hex_build in ["1", "true"] ->
-        {name, "~> 0.1.5"}
+        {name, "~> 0.2.0"}
 
       {_hex_build, path} when is_binary(path) and path != "" ->
-        {name, "~> 0.1.5", path: Path.expand(path)}
+        {name, "~> 0.2.0", path: Path.expand(path)}
 
       _other ->
-        {name, "~> 0.1.5",
+        {name, "~> 0.2.0",
          github: "elchemista/#{repository}", branch: ecosystem_branch(repository)}
     end
   end

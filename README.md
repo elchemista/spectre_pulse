@@ -3,8 +3,15 @@
 Spectre Pulse is a transport-independent protocol for communication between
 [Spectre](https://github.com/elchemista/spectre) agents.
 
-The exact `0.1.6` compatibility surface is published in the
+The exact `0.2.0` compatibility surface is published in the
 [public API manifest](docs/PUBLIC_API.md).
+
+## 0.2.0 Spectre Compatibility
+
+Version `0.2.0` aligns Pulse and its complete ecosystem conformance Stack with
+Spectre `~> 0.2.0`. Protocol v1 and its permanent `0.1.6` wire fixture remain
+unchanged; the core still owns policy, Effect lifecycle, idempotency, Runs,
+Work, Vigil, and canonical persistence.
 
 ## 0.1.6 Recoverable Baseline
 
@@ -301,7 +308,7 @@ only Tao's logical address and declared capabilities.
 
 ## Route inbound work to a Spectre Instance
 
-Pulse 0.1.6 can hand an authenticated envelope to the core Instance selected
+Pulse 0.2.0 can hand an authenticated envelope to the core Instance selected
 by an explicit `AgentRef + Subject`. The trusted host or transport supplies
 the Subject and the supervisor; Pulse never infers a Subject from an address,
 sender name, or message:

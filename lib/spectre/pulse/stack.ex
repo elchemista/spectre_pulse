@@ -9,7 +9,7 @@ defmodule Spectre.Pulse.Stack do
 
   alias Spectre.Stack.DSL
 
-  @version "0.1.6"
+  @version "0.2.0"
 
   @doc false
   @spec manifest() :: keyword()
@@ -18,7 +18,7 @@ defmodule Spectre.Pulse.Stack do
       id: :pulse,
       version: @version,
       contract: 1,
-      spectre: "~> 0.1.5",
+      spectre: "~> 0.2.0",
       provides: [{:contract, {:pulse, 1}}, {:service, :pulse}],
       requires: [],
       conflicts: [],
