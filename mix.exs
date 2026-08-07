@@ -15,7 +15,6 @@ defmodule SpectrePulse.MixProject do
       source_url: @source_url,
       homepage_url: @source_url,
       test_coverage: [summary: [threshold: 91]],
-      package: package(),
       docs: docs(),
       dialyzer: [plt_add_apps: [:mix]],
       deps: deps()
@@ -32,67 +31,24 @@ defmodule SpectrePulse.MixProject do
   defp deps do
     [
       # Pulse deliberately depends on Spectre, never the other way around.
-      spectre_dep(),
-      ecosystem_test_dep(:spectre_beam, "SPECTRE_BEAM_PATH", "spectre_beam"),
-      ecosystem_test_dep(
-        :spectre_directive,
-        "SPECTRE_DIRECTIVE_PATH",
-        "spectre_directive"
-      ),
-      ecosystem_test_dep(:spectre_kinetic, "SPECTRE_KINETIC_PATH", "spectre_kinetic"),
-      ecosystem_test_dep(:spectre_lens, "SPECTRE_LENS_PATH", "spectre_lens"),
-      ecosystem_test_dep(:spectre_mnemonic, "SPECTRE_MNEMONIC_PATH", "spectre_mnemonic"),
-      ecosystem_test_dep(:spectre_prism, "SPECTRE_PRISM_PATH", "spectre_prism"),
+      {:spectre, github: "elchemista/spectre", tag: "0.2.0", override: true},
+      {:spectre_beam,
+       github: "elchemista/spectre_beam", branch: "main", only: :test, runtime: false},
+      {:spectre_directive,
+       github: "elchemista/spectre_directive", branch: "main", only: :test, runtime: false},
+      {:spectre_kinetic,
+       github: "elchemista/spectre_kinetic", branch: "main", only: :test, runtime: false},
+      {:spectre_lens,
+       github: "elchemista/spectre_lens", branch: "main", only: :test, runtime: false},
+      {:spectre_mnemonic,
+       github: "elchemista/spectre_mnemonic", branch: "main", only: :test, runtime: false},
+      {:spectre_prism,
+       github: "elchemista/spectre_prism", branch: "main", only: :test, runtime: false},
       {:jason, "~> 1.4"},
       {:req, "~> 0.5"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
-    ]
-  end
-
-  defp ecosystem_dep(name, env, repository) do
-    case {System.get_env("SPECTRE_HEX_BUILD"), System.get_env(env)} do
-      {hex_build, _path} when hex_build in ["1", "true"] ->
-        {name, "~> 0.2.0"}
-
-      {_hex_build, path} when is_binary(path) and path != "" ->
-        {name, "~> 0.2.0", path: Path.expand(path)}
-
-      _other ->
-        {name, "~> 0.2.0",
-         github: "elchemista/#{repository}", branch: ecosystem_branch(repository)}
-    end
-  end
-
-  defp ecosystem_branch(_repository), do: "main"
-
-  defp spectre_dep do
-    case ecosystem_dep(:spectre, "SPECTRE_PATH", "spectre") do
-      {:spectre, requirement} ->
-        {:spectre, requirement}
-
-      {:spectre, requirement, options} ->
-        {:spectre, requirement, Keyword.put(options, :override, true)}
-    end
-  end
-
-  defp ecosystem_test_dep(name, env, repository) do
-    case ecosystem_dep(name, env, repository) do
-      {^name, requirement} ->
-        {name, requirement, only: :test, runtime: false}
-
-      {^name, requirement, options} ->
-        {name, requirement, Keyword.merge(options, only: :test, runtime: false)}
-    end
-  end
-
-  defp package do
-    [
-      licenses: ["Apache-2.0"],
-      links: %{"GitHub" => @source_url},
-      maintainers: ["elchemista"],
-      files: ~w(lib examples priv docs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 

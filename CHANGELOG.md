@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Make every Spectre ecosystem dependency an explicit GitHub dependency with
+  no Hex or path fallback, and remove Hex package metadata and package build CI.
+- Stabilize multi-Run Effect ownership coverage by waiting for the Spectre
+  Instance scheduler to release the completed Run before resuming the next.
+
 ## 0.2.0 — 2026-08-01
 
 - Raise Pulse, Stack, and ecosystem dependency contracts to Spectre 0.2.0.

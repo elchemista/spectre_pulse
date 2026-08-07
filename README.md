@@ -18,8 +18,7 @@ Work, Vigil, and canonical persistence.
 Version `0.1.6` is a consolidation-only release with no new runtime feature and
 no intentional breaking change. Elixir 1.19 on Erlang/OTP 28 is the initially
 guaranteed pair. Uniform CI runs format, warnings-as-errors compilation, tests,
-non-strict Credo, Dialyzer, ExDoc, and local package validation with no
-publication. The permanent
+non-strict Credo, Dialyzer, and ExDoc. The permanent
 Pulse v1 envelope fixture under `test/fixtures/compatibility/0.1.6` freezes the
 wire handoff used by future `0.2.0` work.
 
@@ -102,22 +101,14 @@ def deps do
   [
     {:spectre,
      github: "elchemista/spectre",
-     branch: "main"},
-    {:spectre_pulse, github: "elchemista/spectre_pulse"}
+     tag: "0.2.0"},
+    {:spectre_pulse, github: "elchemista/spectre_pulse", tag: "v0.2.0"}
   ]
 end
 ```
 
-For sibling-repository development:
-
-```elixir
-def deps do
-  [
-    {:spectre, path: "../spectre"},
-    {:spectre_pulse, path: "../spectre_pulse"}
-  ]
-end
-```
+Spectre Pulse is distributed exclusively from GitHub; there is no Hex or
+path-based Spectre dependency in its manifest.
 
 Pulse requires Elixir 1.19 or later.
 
