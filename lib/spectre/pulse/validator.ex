@@ -6,6 +6,7 @@ defmodule Spectre.Pulse.Validator do
   alias Spectre.Pulse.Address
   alias Spectre.Pulse.Envelope
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Payload
   alias Spectre.Pulse.Protocol
 
@@ -17,7 +18,8 @@ defmodule Spectre.Pulse.Validator do
   def validate(envelope, opts \\ [])
 
   def validate(%Envelope{} = envelope, opts) do
-    with :ok <- validate_version(envelope.version),
+    with {:ok, opts} <- Options.keyword(opts),
+         :ok <- validate_version(envelope.version),
          :ok <- validate_id(:id, envelope.id),
          :ok <- validate_relation(envelope.relates_to, envelope.id),
          {:ok, from} <- Address.normalize(envelope.from, opts),
@@ -65,18 +67,22 @@ defmodule Spectre.Pulse.Validator do
 
   @spec validate_metadata(term(), keyword()) :: :ok | {:error, term()}
   defp validate_metadata(metadata, opts) when is_map(metadata) do
-    max_bytes =
-      Keyword.get(opts, :max_metadata_bytes, Protocol.default_limits().max_metadata_bytes)
+    with {:ok, max_bytes} <-
+           Options.positive_integer(
+             opts,
+             :max_metadata_bytes,
+             Protocol.default_limits().max_metadata_bytes
+           ) do
+      case encode_metadata(metadata) do
+        {:ok, encoded} when byte_size(encoded) <= max_bytes ->
+          :ok
 
-    case Jason.encode(metadata) do
-      {:ok, encoded} when byte_size(encoded) <= max_bytes ->
-        :ok
+        {:ok, encoded} ->
+          {:error, {:metadata_too_large, byte_size(encoded), max_bytes}}
 
-      {:ok, encoded} ->
-        {:error, {:metadata_too_large, byte_size(encoded), max_bytes}}
-
-      {:error, reason} ->
-        {:error, {:metadata_not_encodable, reason}}
+        {:error, reason} ->
+          {:error, {:metadata_not_encodable, reason}}
+      end
     end
   end
 
@@ -85,4 +91,13 @@ defmodule Spectre.Pulse.Validator do
   @spec put_message_id(Error.t(), String.t() | nil) :: Error.t()
   defp put_message_id(%Error{message_id: nil} = error, id), do: %{error | message_id: id}
   defp put_message_id(%Error{} = error, _id), do: error
+
+  @spec encode_metadata(map()) :: {:ok, binary()} | {:error, term()}
+  defp encode_metadata(metadata) do
+    Jason.encode(metadata)
+  rescue
+    exception -> {:error, exception}
+  catch
+    kind, reason -> {:error, {kind, reason}}
+  end
 end

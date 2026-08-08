@@ -19,7 +19,8 @@ defmodule Spectre.Pulse.Protocol do
     max_envelope_bytes: 1_000_000,
     max_address_bytes: 512,
     max_type_bytes: 255,
-    max_metadata_bytes: 65_536
+    max_metadata_bytes: 65_536,
+    max_receipt_bytes: 65_536
   }
 
   @type act :: :inform | :query | :request
@@ -87,7 +88,30 @@ defmodule Spectre.Pulse.Protocol do
 
   @doc "Merges caller overrides onto the defensive protocol limits."
   @spec limits(keyword() | map()) :: map()
-  def limits(overrides \\ []) do
-    Map.merge(@default_limits, Map.new(overrides))
+  def limits(overrides \\ [])
+
+  def limits(overrides) when is_list(overrides) do
+    if Keyword.keyword?(overrides) do
+      overrides |> Map.new() |> limits()
+    else
+      raise ArgumentError, "Pulse limits must be a keyword list or map"
+    end
   end
+
+  def limits(overrides) when is_map(overrides) do
+    Enum.reduce(overrides, @default_limits, fn
+      {key, value}, limits
+      when is_map_key(@default_limits, key) and is_integer(value) and value > 0 ->
+        Map.put(limits, key, value)
+
+      {key, _value}, _limits when not is_map_key(@default_limits, key) ->
+        raise ArgumentError, "unknown Pulse limit: #{inspect(key)}"
+
+      {key, value}, _limits ->
+        raise ArgumentError,
+              "Pulse limit #{inspect(key)} must be a positive integer, got: #{inspect(value)}"
+    end)
+  end
+
+  def limits(_overrides), do: raise(ArgumentError, "Pulse limits must be a keyword list or map")
 end

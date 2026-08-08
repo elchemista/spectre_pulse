@@ -96,6 +96,26 @@ defmodule Spectre.Pulse.RuntimeFabricRegistryTest do
       assert {:error, %Error{kind: :validation, reason: ^reason}} =
                Fabric.register_transport(transport_name, module, opts)
     end
+
+    duplicate_name = unique_atom("duplicate_transport")
+
+    assert {:error, %Error{reason: {:duplicate_transport_registration, ^duplicate_name}}} =
+             Fabric.register_transports([
+               {duplicate_name, TransportA, []},
+               {duplicate_name, TransportA, []}
+             ])
+
+    refute Map.has_key?(Fabric.transports(), duplicate_name)
+
+    atomic_name = unique_atom("atomic_transport")
+
+    assert {:error, %Error{reason: {:invalid_transport, String}}} =
+             Fabric.register_transports([
+               {atomic_name, TransportA, []},
+               {unique_atom("invalid_atomic_transport"), String, []}
+             ])
+
+    refute Map.has_key?(Fabric.transports(), atomic_name)
   end
 
   test "Fabric validates connection options, ownership and route replacement" do
@@ -228,6 +248,21 @@ defmodule Spectre.Pulse.RuntimeFabricRegistryTest do
     assert {:error, %Error{reason: {:invalid_address, :address_must_be_logical}}} =
              Local.subscribe(AgentA, identity: "invalid")
 
+    assert {:error, %Error{reason: {:invalid_options, :invalid}}} =
+             Local.subscribe(AgentA, :invalid)
+
+    assert {:error, %Error{reason: {:invalid_options, [:invalid]}}} =
+             Local.subscribe(AgentA, [:invalid])
+
+    assert {:error, %Error{reason: {:invalid_subscription_owner, :invalid}}} =
+             Local.subscribe(AgentA, owner: :invalid)
+
+    assert {:error, %Error{reason: {:invalid_options, :invalid}}} =
+             Local.subscribe(AgentA, inbound: :invalid)
+
+    assert {:error, %Error{reason: {:invalid_pulse_agent, "agent"}}} =
+             Local.subscription("agent", [])
+
     assert {:ok, identity, AgentA, endpoint_opts} =
              Local.subscription(AgentA,
                inbound: [allow_unauthenticated: true],
@@ -252,6 +287,8 @@ defmodule Spectre.Pulse.RuntimeFabricRegistryTest do
       {[transports: [:invalid]], {:invalid_transport_registration, :invalid}},
       {[transports: [{:driver, TransportA, [:invalid]}]],
        {:invalid_transport_registration_options, :driver, [:invalid]}},
+      {[transports: [{:driver, TransportA}, {:driver, TransportA}]],
+       {:duplicate_transport_registration, :driver}},
       {[transports: [{:driver, String}]], {:invalid_transport, String}}
     ]
 
@@ -261,6 +298,23 @@ defmodule Spectre.Pulse.RuntimeFabricRegistryTest do
 
     assert {:stop, %Error{reason: {:invalid_runtime_options, :invalid}}} =
              Runtime.init(:invalid)
+
+    Process.flag(:trap_exit, true)
+
+    assert {:error, %Error{reason: {:invalid_runtime_options, :invalid}}} =
+             Runtime.start_link(:invalid)
+
+    atomic_name = unique_atom("runtime_atomic_transport")
+
+    assert {:stop, %Error{reason: {:invalid_transport, String}}} =
+             Runtime.init(
+               transports: [
+                 {atomic_name, TransportA},
+                 {unique_atom("runtime_invalid_transport"), String}
+               ]
+             )
+
+    refute Map.has_key?(Fabric.transports(), atomic_name)
   end
 
   test "Runtime detects duplicate logical identities before starting subscriptions" do

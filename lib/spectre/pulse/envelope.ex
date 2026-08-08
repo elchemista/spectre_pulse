@@ -8,6 +8,7 @@ defmodule Spectre.Pulse.Envelope do
 
   alias Spectre.Pulse.Address
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Payload
   alias Spectre.Pulse.Protocol
   alias Spectre.Pulse.Validator
@@ -32,16 +33,22 @@ defmodule Spectre.Pulse.Envelope do
   @spec new(t() | map() | keyword(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def new(envelope, opts \\ [])
   def new(%__MODULE__{} = envelope, opts), do: Validator.validate(envelope, opts)
-  def new(envelope, opts) when is_list(envelope), do: envelope |> Map.new() |> new(opts)
+
+  def new(envelope, opts) when is_list(envelope) do
+    if Keyword.keyword?(envelope),
+      do: envelope |> Map.new() |> new(opts),
+      else: {:error, Error.not_sent(:validation, {:invalid_envelope, envelope})}
+  end
 
   def new(envelope, opts) when is_map(envelope) do
-    with {:ok, from} <- Address.normalize(attr(envelope, :from), opts),
+    with {:ok, opts} <- Options.keyword(opts),
+         {:ok, from} <- Address.normalize(attr(envelope, :from), opts),
          {:ok, to} <- Address.normalize(attr(envelope, :to), opts),
          {:ok, act} <- Protocol.decode_act(attr(envelope, :act, :inform)),
          {:ok, payload} <- Payload.new(attr(envelope, :payload), opts) do
       value = %__MODULE__{
         version: attr(envelope, :version, Protocol.version()),
-        id: attr(envelope, :id, Spectre.Identity.uuid7()),
+        id: attr_lazy(envelope, :id, &Spectre.Identity.uuid7/0),
         from: from,
         to: to,
         act: act,
@@ -89,18 +96,35 @@ defmodule Spectre.Pulse.Envelope do
   @doc "Builds a response envelope by swapping sender and recipient."
   @spec reply(t(), String.t(), term(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def reply(%__MODULE__{} = incoming, type, data, opts \\ []) do
-    new(
-      version: incoming.version,
-      from: incoming.to,
-      to: incoming.from,
-      act: Keyword.get(opts, :act, :inform),
-      relates_to: Keyword.get(opts, :relates_to, incoming.id),
-      payload: %{type: type, data: data},
-      metadata: Keyword.get(opts, :metadata, %{})
-    )
+    case Options.keyword(opts) do
+      {:ok, opts} ->
+        new(
+          [
+            version: incoming.version,
+            from: incoming.to,
+            to: incoming.from,
+            act: Keyword.get(opts, :act, :inform),
+            relates_to: Keyword.get(opts, :relates_to, incoming.id),
+            payload: %{type: type, data: data},
+            metadata: Keyword.get(opts, :metadata, %{})
+          ],
+          opts
+        )
+
+      {:error, reason} ->
+        {:error, Error.not_sent(:validation, reason)}
+    end
   end
 
   @spec attr(map(), atom(), term()) :: term()
   defp attr(map, key, default \\ nil),
     do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+
+  @spec attr_lazy(map(), atom(), (-> term())) :: term()
+  defp attr_lazy(map, key, default) do
+    case Map.fetch(map, key) do
+      {:ok, value} -> value
+      :error -> Map.get_lazy(map, Atom.to_string(key), default)
+    end
+  end
 end

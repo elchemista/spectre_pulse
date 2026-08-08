@@ -12,6 +12,7 @@ defmodule Spectre.Pulse.Endpoint do
   alias Spectre.Pulse.Inbound
   alias Spectre.Pulse.Inbound.Result
   alias Spectre.Pulse.InboundContext
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Receipt
 
   @callback handle_pulse(Envelope.t(), InboundContext.t(), keyword()) ::
@@ -27,13 +28,23 @@ defmodule Spectre.Pulse.Endpoint do
   @doc "Accepts an envelope through a configured endpoint target."
   @spec accept(term(), Envelope.t(), InboundContext.t() | map(), keyword()) ::
           {:ok, Receipt.t()} | {:error, Error.t()}
-  def accept(target, %Envelope{} = envelope, context, opts \\ []) do
-    context = InboundContext.new(context)
+  def accept(target, envelope, context, opts \\ [])
 
-    target
-    |> invoke(envelope, context, opts)
-    |> normalize(envelope, opts)
+  def accept(target, %Envelope{} = envelope, context, opts) do
+    with {:ok, opts} <- Options.keyword(opts),
+         {:ok, envelope} <- Envelope.new(envelope, opts),
+         {:ok, context} <- InboundContext.normalize(context) do
+      target
+      |> invoke(envelope, context, opts)
+      |> normalize(envelope, opts)
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason, message_id: envelope.id)}
+    end
   end
+
+  def accept(_target, envelope, _context, _opts),
+    do: {:error, Error.not_sent(:validation, {:invalid_envelope, envelope})}
 
   @spec invoke(term(), Envelope.t(), InboundContext.t(), keyword()) :: endpoint_result()
   defp invoke(nil, envelope, context, opts), do: Inbound.receive(envelope, context, opts)
@@ -87,9 +98,13 @@ defmodule Spectre.Pulse.Endpoint do
   @spec normalize(endpoint_result(), Envelope.t(), keyword()) ::
           {:ok, Receipt.t()} | {:error, Error.t()}
   defp normalize({:ok, %Result{} = result}, envelope, opts) do
-    case notify_result(result, opts) do
-      :ok ->
-        {:ok, result.receipt}
+    with {:ok, receipt} <- validate_receipt(result.receipt, envelope, opts),
+         result = %{result | receipt: receipt},
+         :ok <- notify_result(result, opts) do
+      {:ok, receipt}
+    else
+      {:error, %Error{} = error} ->
+        {:error, error}
 
       {:error, reason} ->
         {:error,
@@ -100,7 +115,8 @@ defmodule Spectre.Pulse.Endpoint do
   defp normalize(%Result{} = result, envelope, opts),
     do: normalize({:ok, result}, envelope, opts)
 
-  defp normalize({:ok, %Receipt{} = receipt}, _envelope, _opts), do: {:ok, receipt}
+  defp normalize({:ok, %Receipt{} = receipt}, envelope, opts),
+    do: validate_receipt(receipt, envelope, opts)
 
   defp normalize(:ok, envelope, opts),
     do:
@@ -168,4 +184,35 @@ defmodule Spectre.Pulse.Endpoint do
       {:error,
        Error.outcome_unknown(:inbound, {:endpoint_exit, kind, reason}, message_id: envelope.id)}
   end
+
+  @spec validate_receipt(term(), Envelope.t(), keyword()) ::
+          {:ok, Receipt.t()} | {:error, Error.t()}
+  defp validate_receipt(%Receipt{} = receipt, envelope, opts) do
+    case Receipt.new(receipt) do
+      {:ok, %Receipt{message_id: message_id} = receipt} when message_id == envelope.id ->
+        {:ok,
+         %{
+           receipt
+           | via: receipt.via || Keyword.get(opts, :via),
+             route_id: receipt.route_id || Keyword.get(opts, :route_id)
+         }}
+
+      {:ok, %Receipt{} = receipt} ->
+        {:error,
+         Error.outcome_unknown(:inbound, :receipt_message_mismatch,
+           message_id: envelope.id,
+           details: %{receipt_message_id: receipt.message_id}
+         )}
+
+      {:error, %Error{} = error} ->
+        {:error, %{error | outcome: :outcome_unknown, message_id: envelope.id}}
+    end
+  end
+
+  defp validate_receipt(receipt, envelope, _opts),
+    do:
+      {:error,
+       Error.outcome_unknown(:inbound, {:invalid_endpoint_receipt, receipt},
+         message_id: envelope.id
+       )}
 end

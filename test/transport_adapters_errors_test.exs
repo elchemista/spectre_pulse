@@ -23,13 +23,20 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest.ReqAdapter do
   @moduledoc false
 
   @response_key {__MODULE__, :response}
+  @notify_key {__MODULE__, :notify}
 
-  def respond(response) do
+  def respond(response, notify \\ nil) do
     Process.put(@response_key, response)
+    Process.put(@notify_key, notify)
     __MODULE__
   end
 
   def run(request) do
+    case Process.delete(@notify_key) do
+      pid when is_pid(pid) -> send(pid, {:req_request, request})
+      _other -> :ok
+    end
+
     case Process.delete(@response_key) do
       nil -> raise "missing test Req response"
       response -> {request, response}
@@ -198,13 +205,115 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
 
     invalid_envelope = %{envelope | metadata: %{callback: fn -> :ok end}}
 
-    assert {:error, %Error{kind: :codec, reason: {:json_encode_failed, _reason}}} =
+    assert {:error,
+            %Error{
+              kind: :validation,
+              reason: {:metadata_not_encodable, _reason},
+              route_id: "rest-network"
+            }} =
              REST.deliver(route, invalid_envelope, [])
 
     raising_route = %{route | metadata: %{req_options: :invalid}}
 
-    assert {:error, %Error{reason: {:rest_exception, %FunctionClauseError{}}}} =
+    assert {:error, %Error{reason: {:invalid_options, :invalid}}} =
              REST.deliver(raising_route, envelope, [])
+  end
+
+  test "REST delivery fixes request semantics and validates URLs, headers and receipt limits", %{
+    envelope: envelope
+  } do
+    route = Route.rest(envelope.to, "http://adapter.test/messages", id: "rest-hardened")
+
+    request_adapter =
+      ReqAdapter.respond(%Req.Response{status: 202, body: ""}, self())
+
+    assert {:ok, %Receipt{}} =
+             REST.deliver(route, envelope,
+               headers: [{"x-pulse-test", "call"}],
+               req_options: [
+                 adapter: request_adapter,
+                 method: :delete,
+                 url: "http://attacker.test/override",
+                 body: "forged",
+                 headers: [{"x-forged", "true"}],
+                 receive_timeout: 1,
+                 redirect: true,
+                 redirect_trusted: true,
+                 retry: true,
+                 decode_body: true,
+                 into: :invalid,
+                 request_steps: [forged: fn request -> request end],
+                 response_steps: [forged: fn pair -> pair end],
+                 error_steps: [forged: fn pair -> pair end]
+               ]
+             )
+
+    assert_receive {:req_request, request}
+    assert request.method == :post
+    assert URI.to_string(request.url) == route.target
+    assert {:ok, ^envelope} = JSON.decode(request.body, [])
+    assert Req.Request.get_header(request, "content-type") == ["application/json"]
+    assert Req.Request.get_header(request, "accept") == ["application/json"]
+    assert Req.Request.get_header(request, "x-pulse-test") == ["call"]
+    assert Req.Request.get_header(request, "x-forged") == []
+    assert Req.Request.get_option(request, :redirect) == false
+    assert Req.Request.get_option(request, :retry) == false
+    assert Req.Request.get_option(request, :decode_body) == false
+    assert is_function(request.into, 2)
+
+    invalid_urls = [
+      "ftp://adapter.test/messages",
+      "http://user:password@adapter.test/messages",
+      "http://adapter.test/messages#fragment",
+      "http://adapter.test/%zz",
+      "http://adapter.test/a b",
+      "http://adapter.test:99999/messages"
+    ]
+
+    for url <- invalid_urls do
+      assert {:error, %Error{outcome: :not_sent}} =
+               REST.deliver(%{route | target: url}, envelope, [])
+    end
+
+    invalid_headers = [
+      [{"content-length", "1"}],
+      [{"connection", "close"}],
+      [{"x-test", "ok\r\ninjected: true"}],
+      [{"bad header", "value"}],
+      [{"x-duplicate", "one"}, {"X-Duplicate", "two"}]
+    ]
+
+    for headers <- invalid_headers do
+      assert {:error, %Error{outcome: :not_sent}} =
+               REST.deliver(route, envelope, headers: headers)
+    end
+
+    oversized = String.duplicate("x", 64)
+
+    assert {:error,
+            %Error{
+              outcome: :outcome_unknown,
+              reason: {:receipt_too_large, 64, 16}
+            }} =
+             REST.deliver(route, envelope,
+               max_receipt_bytes: 16,
+               req_options: [adapter: adapter(202, oversized)]
+             )
+
+    {stream_url, stream_server} = http_server(202, String.duplicate("y", 128))
+
+    assert {:error,
+            %Error{
+              outcome: :outcome_unknown,
+              reason: {:receipt_too_large, bytes, 32}
+            }} =
+             REST.deliver(%{route | target: stream_url}, envelope,
+               max_receipt_bytes: 32,
+               timeout: 1_000
+             )
+
+    assert bytes > 32
+    Task.await(stream_server, 5_000)
   end
 
   test "REST probe observes reachable, rejected-server and connection failure states", %{
@@ -302,6 +411,29 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
              target: endpoint,
              authenticator: :invalid
            ).status == 401
+
+    assert REST.handle_request(body, %{}, :peer,
+             target: endpoint,
+             authenticator: fn _headers, _peer -> {:ok, nil, %{}} end
+           ).status == 401
+
+    assert REST.handle_request(body, %{}, :peer,
+             target: endpoint,
+             allow_unauthenticated: true,
+             authenticator: fn _headers, _peer -> {:ok, nil, %{explicit: true}} end
+           ).status == 202
+
+    assert REST.handle_request(body, %{}, :peer,
+             target: endpoint,
+             allow_unauthenticated: :yes
+           ).status == 422
+
+    assert REST.handle_request(body, [{"x-test", "one"}, {"X-Test", "two"}], :peer,
+             target: endpoint,
+             allow_unauthenticated: true
+           ).status == 422
+
+    assert REST.handle_request(body, %{}, :peer, :invalid).status == 422
   end
 
   test "REST inbound maps codec, validation, authorization, routing and endpoint errors", %{
@@ -535,8 +667,9 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
 
     assert {:error,
             %Error{
-              outcome: :outcome_unknown,
-              reason: {:node_call_failed, :error, _reason}
+              kind: :validation,
+              outcome: :not_sent,
+              reason: {:invalid_node_timeout, :invalid}
             }} = Node.deliver(route, envelope, timeout: :invalid)
 
     unavailable =
@@ -662,7 +795,7 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
     ReqAdapter.respond(%Req.TransportError{reason: reason})
   end
 
-  defp http_server(status) do
+  defp http_server(status, body \\ "") do
     {:ok, listener} =
       :gen_tcp.listen(0, [:binary, packet: :raw, active: false, reuseaddr: true])
 
@@ -673,7 +806,10 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
         {:ok, socket} = :gen_tcp.accept(listener, 5_000)
         {:ok, _request} = :gen_tcp.recv(socket, 0, 5_000)
 
-        response = "HTTP/1.1 #{status} Test\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+        response =
+          "HTTP/1.1 #{status} Test\r\ncontent-length: #{byte_size(body)}\r\n" <>
+            "connection: close\r\n\r\n" <> body
+
         :ok = :gen_tcp.send(socket, response)
         :gen_tcp.close(socket)
         :gen_tcp.close(listener)

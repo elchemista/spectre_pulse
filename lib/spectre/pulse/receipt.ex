@@ -7,6 +7,7 @@ defmodule Spectre.Pulse.Receipt do
   """
 
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Validator
 
   @enforce_keys [:message_id, :status, :accepted_at]
@@ -24,14 +25,21 @@ defmodule Spectre.Pulse.Receipt do
   @doc "Creates an accepted technical receipt."
   @spec accepted(String.t(), keyword()) :: t()
   def accepted(message_id, opts \\ []) do
-    %__MODULE__{
-      message_id: message_id,
-      status: :accepted,
-      via: Keyword.get(opts, :via),
-      route_id: Keyword.get(opts, :route_id),
-      accepted_at: Keyword.get(opts, :accepted_at, DateTime.utc_now()),
-      metadata: Keyword.get(opts, :metadata, %{})
-    }
+    with {:ok, opts} <- Options.keyword(opts),
+         receipt <- %__MODULE__{
+           message_id: message_id,
+           status: :accepted,
+           via: Keyword.get(opts, :via),
+           route_id: Keyword.get(opts, :route_id),
+           accepted_at: Keyword.get_lazy(opts, :accepted_at, &DateTime.utc_now/0),
+           metadata: Keyword.get(opts, :metadata, %{})
+         },
+         {:ok, receipt} <- validate(receipt) do
+      receipt
+    else
+      {:error, %Error{} = error} -> raise ArgumentError, Exception.message(error)
+      {:error, reason} -> raise ArgumentError, inspect(reason)
+    end
   end
 
   @doc "Restores and validates a receipt from a map."

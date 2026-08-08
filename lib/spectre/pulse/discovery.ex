@@ -17,12 +17,22 @@ defmodule Spectre.Pulse.Discovery do
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Fabric
   alias Spectre.Pulse.Local
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Route
 
   @doc "Resolves a local contact reference without selecting a transport."
   @spec resolve_identity(ContactBook.t(), term(), keyword()) ::
           {:ok, Resolution.t()} | {:error, Error.t()}
   def resolve_identity(%ContactBook{} = book, reference, opts \\ []) do
+    case Options.keyword(opts) do
+      {:ok, opts} -> resolve_with_fallback(book, reference, opts)
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
+    end
+  end
+
+  @spec resolve_with_fallback(ContactBook.t(), term(), keyword()) ::
+          {:ok, Resolution.t()} | {:error, Error.t()}
+  defp resolve_with_fallback(book, reference, opts) do
     case Directory.resolve(book, reference, opts) do
       {:ok, resolution} ->
         {:ok, resolution}
@@ -41,26 +51,36 @@ defmodule Spectre.Pulse.Discovery do
   """
   @spec routes(String.t(), keyword()) :: {:ok, [Route.t()]} | {:error, Error.t()}
   def routes(address, opts \\ []) do
-    with {:ok, canonical} <- Address.normalize(address),
+    with {:ok, opts} <- Options.keyword(opts),
+         {:ok, canonical} <- Address.normalize(address),
          {:ok, explicit} <- normalize_routes(Keyword.get(opts, :routes, [])) do
       base = Local.routes(canonical) ++ fabric_routes(canonical) ++ explicit
       {route_chunks, errors} = discover_directory_routes(directories(opts), canonical, opts)
       routes = Enum.concat([base | Enum.reverse(route_chunks)])
 
       finalize_routes(routes, errors, canonical)
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
     end
   end
 
   @doc "Returns all configured Directory providers in deterministic order."
   @spec directories(keyword()) :: [term()]
   def directories(opts \\ []) do
-    per_agent = Keyword.get(opts, :directory)
-    per_call = List.wrap(Keyword.get(opts, :directories, []))
-    application = List.wrap(Application.get_env(:spectre_pulse, :directories, []))
+    case Options.keyword(opts) do
+      {:ok, opts} ->
+        per_agent = Keyword.get(opts, :directory)
+        per_call = List.wrap(Keyword.get(opts, :directories, []))
+        application = List.wrap(Application.get_env(:spectre_pulse, :directories, []))
 
-    [per_agent | per_call ++ application]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.uniq()
+        [per_agent | per_call ++ application]
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
+
+      {:error, _reason} ->
+        []
+    end
   end
 
   @spec resolve_from_directories([term()], term(), keyword(), Error.t()) ::

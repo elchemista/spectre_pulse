@@ -6,6 +6,7 @@ defmodule Spectre.Pulse.Extension do
   alias Spectre.Pulse.Address
   alias Spectre.Pulse.Config
   alias Spectre.Pulse.DSL
+  alias Spectre.Pulse.Options
 
   @impl true
   def id, do: :pulse
@@ -15,14 +16,17 @@ defmodule Spectre.Pulse.Extension do
 
   @impl true
   def setup(owner, opts) do
-    DSL.install!(owner, direct_options(opts))
+    case Options.keyword(opts) do
+      {:ok, opts} -> DSL.install!(owner, direct_options(opts))
+      {:error, reason} -> raise ArgumentError, inspect(reason)
+    end
   end
 
   @impl true
   def compile(owner, opts) do
-    stack_config = Keyword.get(opts, :stack_config, %{})
-
-    with :ok <- validate_stack_config(stack_config),
+    with {:ok, opts} <- Options.keyword(opts),
+         stack_config <- Keyword.get(opts, :stack_config, %{}),
+         :ok <- validate_stack_config(stack_config),
          {:ok, config} <- compile_config(owner, stack_config) do
       {:ok,
        %{
@@ -47,7 +51,9 @@ defmodule Spectre.Pulse.Extension do
 
   def expand_handler({:pulse, meta, [to, opts]}, _caller, _extension_opts)
       when is_list(opts) do
-    expand_pulse(meta, to, opts)
+    if Keyword.keyword?(opts),
+      do: expand_pulse(meta, to, opts),
+      else: {:error, {:invalid_pulse_handler_options, opts}}
   end
 
   def expand_handler(_handler, _caller, _opts), do: :ignore
@@ -91,8 +97,51 @@ defmodule Spectre.Pulse.Extension do
   end
 
   @spec validate_stack_config(term()) :: :ok | {:error, term()}
-  defp validate_stack_config(config) when is_map(config), do: :ok
+  defp validate_stack_config(config) when is_map(config) do
+    unknown = Map.keys(config) -- [:directory, :transports]
+
+    with [] <- unknown,
+         :ok <- validate_stack_directory(Map.get(config, :directory)),
+         :ok <- validate_stack_transports(Map.get(config, :transports, [])) do
+      :ok
+    else
+      [_ | _] = keys -> {:error, {:unknown_pulse_stack_config, keys}}
+      {:error, _reason} = error -> error
+    end
+  end
+
   defp validate_stack_config(config), do: {:error, {:invalid_pulse_stack_config, config}}
+
+  @spec validate_stack_directory(term()) :: :ok | {:error, term()}
+  defp validate_stack_directory(nil), do: :ok
+
+  defp validate_stack_directory(directory)
+       when is_atom(directory) and not is_nil(directory),
+       do: :ok
+
+  defp validate_stack_directory(directory),
+    do: {:error, {:invalid_pulse_directory, directory}}
+
+  @spec validate_stack_transports(term()) :: :ok | {:error, term()}
+  defp validate_stack_transports(transports) when is_list(transports) do
+    Enum.reduce_while(transports, {:ok, MapSet.new()}, fn
+      %{id: id, module: module}, {:ok, ids}
+      when is_atom(id) and not is_nil(id) and is_atom(module) and not is_nil(module) ->
+        if MapSet.member?(ids, id),
+          do: {:halt, {:error, {:duplicate_pulse_transport, id}}},
+          else: {:cont, {:ok, MapSet.put(ids, id)}}
+
+      transport, _acc ->
+        {:halt, {:error, {:invalid_pulse_transport, transport}}}
+    end)
+    |> case do
+      {:ok, _ids} -> :ok
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp validate_stack_transports(transports),
+    do: {:error, {:invalid_pulse_transports, transports}}
 
   @spec direct_options(keyword()) :: keyword()
   defp direct_options(opts) do

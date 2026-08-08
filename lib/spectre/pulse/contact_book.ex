@@ -18,8 +18,13 @@ defmodule Spectre.Pulse.ContactBook do
         }
 
   @doc "Builds a contact book from contacts."
-  @spec new([Contact.t() | map() | keyword()]) :: {:ok, t()} | {:error, Error.t()}
-  def new(contacts \\ []) when is_list(contacts) do
+  @spec new(t() | [Contact.t() | map() | keyword()]) ::
+          {:ok, t()} | {:error, Error.t()}
+  def new(contacts \\ [])
+
+  def new(%__MODULE__{by_key: by_key}) when is_map(by_key), do: new(Map.values(by_key))
+
+  def new(contacts) when is_list(contacts) do
     Enum.reduce_while(contacts, {:ok, %__MODULE__{}}, fn contact, {:ok, book} ->
       case put(book, contact) do
         {:ok, updated} -> {:cont, {:ok, updated}}
@@ -28,8 +33,11 @@ defmodule Spectre.Pulse.ContactBook do
     end)
   end
 
+  def new(value),
+    do: {:error, Error.not_sent(:validation, {:invalid_contact_book, value})}
+
   @doc "Like `new/1`, but raises for invalid or ambiguous contacts."
-  @spec new!([Contact.t() | map() | keyword()]) :: t()
+  @spec new!(t() | [Contact.t() | map() | keyword()]) :: t()
   def new!(contacts \\ []) do
     case new(contacts) do
       {:ok, book} -> book
@@ -135,7 +143,14 @@ defmodule Spectre.Pulse.ContactBook do
 
   @doc "Filters contacts by exact declared fields such as capability."
   @spec find(t(), keyword()) :: [Contact.t()]
-  def find(%__MODULE__{} = book, opts) do
+  def find(%__MODULE__{} = book, opts) when is_list(opts) do
+    if Keyword.keyword?(opts), do: do_find(book, opts), else: []
+  end
+
+  def find(%__MODULE__{}, _opts), do: []
+
+  @spec do_find(t(), keyword()) :: [Contact.t()]
+  defp do_find(book, opts) do
     capability = Keyword.get(opts, :capability)
     identity = Keyword.get(opts, :identity)
 
@@ -155,9 +170,20 @@ defmodule Spectre.Pulse.ContactBook do
   """
   @spec merge([t()]) :: {:ok, t()} | {:error, Error.t()}
   def merge(books) when is_list(books) do
-    contacts = Enum.flat_map(books, &contacts/1)
-    new(contacts)
+    Enum.reduce_while(books, {:ok, []}, fn book, {:ok, chunks} ->
+      case new(book) do
+        {:ok, normalized} -> {:cont, {:ok, [contacts(normalized) | chunks]}}
+        {:error, error} -> {:halt, {:error, error}}
+      end
+    end)
+    |> case do
+      {:ok, chunks} -> chunks |> Enum.reverse() |> Enum.concat() |> new()
+      {:error, error} -> {:error, error}
+    end
   end
+
+  def merge(value),
+    do: {:error, Error.not_sent(:validation, {:invalid_contact_books, value})}
 
   @spec ensure_identity_not_aliased(t(), Contact.t()) :: :ok | {:error, Error.t()}
   defp ensure_identity_not_aliased(%__MODULE__{} = book, %Contact{} = contact) do

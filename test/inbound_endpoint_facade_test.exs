@@ -205,6 +205,9 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
 
     assert {:error, %Error{reason: {:invalid_endpoint, String}}} =
              Endpoint.accept(String, envelope, context)
+
+    assert {:error, %Error{reason: {:invalid_envelope, :invalid}}} =
+             Endpoint.accept(String, :invalid, context)
   end
 
   test "endpoint dispatcher normalizes callback failures and invalid replies", %{
@@ -291,6 +294,9 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
   test "inbound maps authenticated and explicitly unauthenticated envelopes to inputs", %{
     envelope: envelope
   } do
+    assert {:error, %Error{reason: {:invalid_allow_unauthenticated, "yes"}}} =
+             Inbound.to_input(envelope, %{}, allow_unauthenticated: "yes")
+
     assert {:error, %Error{reason: :authenticated_identity_required}} =
              Inbound.to_input(envelope, %{})
 
@@ -631,6 +637,12 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
   test "explicit target configuration requires identity and accepts string keyed contexts", %{
     envelope: envelope
   } do
+    assert {:error, %Error{reason: {:invalid_inbound_context, {:verified, nil}}}} =
+             InboundContext.normalize(%{"verified" => nil})
+
+    assert {:error, %Error{reason: {:invalid_inbound_context, {:metadata, nil}}}} =
+             InboundContext.normalize(%{metadata: nil})
+
     assert {:error, %Error{reason: :target_identity_required}} =
              Inbound.receive(envelope, %{
                "authenticated_identity" => envelope.from,
@@ -846,5 +858,15 @@ defmodule Spectre.Pulse.InboundEndpointFacadeTest do
 
     assert :ok = Spectre.Pulse.disconnect(route.id)
     assert :ok = Spectre.Pulse.disconnect(route.id)
+
+    assert {:error, %Error{reason: {:invalid_envelope, :invalid}}} =
+             Spectre.Pulse.deliver(:invalid)
+
+    assert {:error, %Error{reason: {:invalid_options, :invalid}}} =
+             Spectre.Pulse.reachability(FacadeAgent, :static, :invalid)
+
+    assert_raise ArgumentError, ~r/invalid_options/, fn ->
+      Spectre.Pulse.child_spec(:invalid)
+    end
   end
 end

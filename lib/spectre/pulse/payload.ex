@@ -7,6 +7,7 @@ defmodule Spectre.Pulse.Payload do
   """
 
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Protocol
 
   defstruct [:type, data: %{}]
@@ -17,7 +18,12 @@ defmodule Spectre.Pulse.Payload do
   @spec new(t() | map() | keyword(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def new(payload, opts \\ [])
   def new(%__MODULE__{} = payload, opts), do: validate(payload, opts)
-  def new(payload, opts) when is_list(payload), do: payload |> Map.new() |> new(opts)
+
+  def new(payload, opts) when is_list(payload) do
+    if Keyword.keyword?(payload),
+      do: payload |> Map.new() |> new(opts),
+      else: {:error, Error.not_sent(:validation, {:invalid_payload, payload})}
+  end
 
   def new(payload, opts) when is_map(payload) do
     type = attr(payload, :type)
@@ -43,21 +49,30 @@ defmodule Spectre.Pulse.Payload do
 
   @spec validate(t(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   defp validate(%__MODULE__{type: type} = payload, opts) when is_binary(type) do
-    max_bytes = Keyword.get(opts, :max_type_bytes, Protocol.default_limits().max_type_bytes)
+    with {:ok, opts} <- Options.keyword(opts),
+         {:ok, max_bytes} <-
+           Options.positive_integer(
+             opts,
+             :max_type_bytes,
+             Protocol.default_limits().max_type_bytes
+           ) do
+      cond do
+        type == "" ->
+          {:error, Error.not_sent(:validation, :payload_type_required)}
 
-    cond do
-      type == "" ->
-        {:error, Error.not_sent(:validation, :payload_type_required)}
+        byte_size(type) > max_bytes ->
+          {:error,
+           Error.not_sent(:validation, {:payload_type_too_large, byte_size(type), max_bytes})}
 
-      byte_size(type) > max_bytes ->
-        {:error,
-         Error.not_sent(:validation, {:payload_type_too_large, byte_size(type), max_bytes})}
+        not String.valid?(type) or
+            not Regex.match?(~r/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$/, type) ->
+          {:error, Error.not_sent(:validation, {:invalid_payload_type, type})}
 
-      not Regex.match?(~r/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$/, type) ->
-        {:error, Error.not_sent(:validation, {:invalid_payload_type, type})}
-
-      true ->
-        {:ok, payload}
+        true ->
+          {:ok, payload}
+      end
+    else
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
     end
   end
 

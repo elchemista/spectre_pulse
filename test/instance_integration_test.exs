@@ -210,6 +210,11 @@ defmodule Spectre.Pulse.InstanceIntegrationTest do
              second_ref.run_id
            ]
 
+    assert_eventually(fn ->
+      info = Instance.info(instance)
+      is_nil(info.active_run) and info.ready == [] and info.invocations == %{}
+    end)
+
     assert {:ok, %Turn{ref: second_completed_ref}} =
              Spectre.resume(
                instance,

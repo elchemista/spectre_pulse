@@ -19,6 +19,7 @@ defmodule Spectre.Pulse.Transports.Local do
   alias Spectre.Pulse.Envelope
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.InboundContext
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Reachability
   alias Spectre.Pulse.Receipt
   alias Spectre.Pulse.Route
@@ -94,34 +95,37 @@ defmodule Spectre.Pulse.Transports.Local do
         opts
       )
       when is_pid(sender) do
-    supplied_context =
-      opts
-      |> Keyword.get(:context, %{})
-      |> InboundContext.new()
+    with {:ok, opts} <- Options.keyword(opts),
+         {:ok, supplied_context} <-
+           opts |> Keyword.get(:context, %{}) |> InboundContext.normalize() do
+      context = %{
+        supplied_context
+        | authenticated_identity:
+            supplied_context.authenticated_identity ||
+              Keyword.get(opts, :authenticated_identity, envelope.from),
+          binding: :local,
+          peer: sender,
+          target: endpoint_target(endpoint),
+          target_identity:
+            supplied_context.target_identity || Keyword.get(opts, :target_identity),
+          authorization: supplied_context.authorization || Keyword.get(opts, :authorize),
+          verified:
+            Map.merge(
+              %{local_process: inspect(sender), trust_boundary: :beam_vm},
+              supplied_context.verified
+            )
+      }
 
-    context = %{
-      supplied_context
-      | authenticated_identity:
-          supplied_context.authenticated_identity ||
-            Keyword.get(opts, :authenticated_identity, envelope.from),
-        binding: :local,
-        peer: sender,
-        target: endpoint_target(endpoint),
-        target_identity: supplied_context.target_identity || Keyword.get(opts, :target_identity),
-        authorization: supplied_context.authorization || Keyword.get(opts, :authorize),
-        verified:
-          Map.merge(
-            %{local_process: inspect(sender), trust_boundary: :beam_vm},
-            supplied_context.verified
-          )
-    }
+      endpoint_opts =
+        opts
+        |> Keyword.drop([:context, :authenticated_identity, :target_identity, :authorize])
+        |> Keyword.put(:via, :local)
 
-    endpoint_opts =
-      opts
-      |> Keyword.drop([:context, :authenticated_identity, :target_identity, :authorize])
-      |> Keyword.put(:via, :local)
-
-    Endpoint.accept(endpoint, envelope, context, endpoint_opts)
+      Endpoint.accept(endpoint, envelope, context, endpoint_opts)
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
+    end
   end
 
   def handle_message(_message, _endpoint, _opts) do

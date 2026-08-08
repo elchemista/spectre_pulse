@@ -8,6 +8,7 @@ defmodule Spectre.Pulse.Contact do
 
   alias Spectre.Pulse.Address
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Route
 
   @enforce_keys [:key, :identity]
@@ -27,13 +28,21 @@ defmodule Spectre.Pulse.Contact do
   @doc "Builds a contact."
   @spec new(key(), String.t(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def new(key, identity, opts \\ []) do
-    new(Keyword.merge(opts, key: key, identity: identity))
+    case Options.keyword(opts) do
+      {:ok, opts} -> new(opts |> Keyword.put(:key, key) |> Keyword.put(:identity, identity))
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
+    end
   end
 
   @doc "Builds a contact from a map."
   @spec new(map() | keyword() | t()) :: {:ok, t()} | {:error, Error.t()}
-  def new(%__MODULE__{} = contact), do: validate(contact)
-  def new(attrs) when is_list(attrs), do: attrs |> Map.new() |> new()
+  def new(%__MODULE__{} = contact), do: contact |> Map.from_struct() |> new()
+
+  def new(attrs) when is_list(attrs) do
+    if Keyword.keyword?(attrs),
+      do: attrs |> Map.new() |> new(),
+      else: {:error, Error.not_sent(:validation, {:invalid_contact, attrs})}
+  end
 
   def new(attrs) when is_map(attrs) do
     if Map.has_key?(attrs, :trust) or Map.has_key?(attrs, "trust") do
@@ -69,33 +78,74 @@ defmodule Spectre.Pulse.Contact do
 
   @spec validate(t()) :: {:ok, t()} | {:error, Error.t()}
   defp validate(%__MODULE__{} = contact) do
-    cond do
-      not valid_key?(contact.key) ->
-        {:error, Error.not_sent(:validation, {:invalid_contact_key, contact.key})}
-
-      not is_list(contact.capabilities) ->
-        {:error, Error.not_sent(:validation, {:invalid_capabilities, contact.capabilities})}
-
-      not is_map(contact.metadata) ->
-        {:error, Error.not_sent(:validation, {:invalid_contact_metadata, contact.metadata})}
-
-      Enum.any?(contact.routes, &(&1.address != contact.identity)) ->
-        {:error, Error.not_sent(:validation, :contact_route_identity_mismatch)}
-
-      true ->
-        {:ok,
-         %{
-           contact
-           | capabilities: Enum.uniq(contact.capabilities),
-             routes: Enum.sort_by(contact.routes, & &1.priority)
-         }}
+    with :ok <- validate_key(contact.key),
+         :ok <- validate_display_name(contact.display_name),
+         :ok <- validate_capabilities(contact.capabilities),
+         :ok <- validate_metadata(contact.metadata),
+         :ok <- validate_route_identities(contact.routes, contact.identity) do
+      {:ok,
+       %{
+         contact
+         | capabilities: Enum.uniq(contact.capabilities),
+           routes: Enum.sort_by(contact.routes, & &1.priority)
+       }}
     end
+  end
+
+  @spec validate_key(term()) :: :ok | {:error, Error.t()}
+  defp validate_key(key) do
+    if valid_key?(key),
+      do: :ok,
+      else: {:error, Error.not_sent(:validation, {:invalid_contact_key, key})}
+  end
+
+  @spec validate_display_name(term()) :: :ok | {:error, Error.t()}
+  defp validate_display_name(nil), do: :ok
+
+  defp validate_display_name(display_name) when is_binary(display_name) do
+    if String.valid?(display_name),
+      do: :ok,
+      else: {:error, Error.not_sent(:validation, {:invalid_display_name, display_name})}
+  end
+
+  defp validate_display_name(display_name),
+    do: {:error, Error.not_sent(:validation, {:invalid_display_name, display_name})}
+
+  @spec validate_capabilities(term()) :: :ok | {:error, Error.t()}
+  defp validate_capabilities(capabilities) when is_list(capabilities) do
+    if Enum.all?(capabilities, &valid_capability?/1),
+      do: :ok,
+      else: {:error, Error.not_sent(:validation, {:invalid_capabilities, capabilities})}
+  end
+
+  defp validate_capabilities(capabilities),
+    do: {:error, Error.not_sent(:validation, {:invalid_capabilities, capabilities})}
+
+  @spec validate_metadata(term()) :: :ok | {:error, Error.t()}
+  defp validate_metadata(metadata) when is_map(metadata), do: :ok
+
+  defp validate_metadata(metadata),
+    do: {:error, Error.not_sent(:validation, {:invalid_contact_metadata, metadata})}
+
+  @spec validate_route_identities([Route.t()], String.t()) :: :ok | {:error, Error.t()}
+  defp validate_route_identities(routes, identity) do
+    if Enum.any?(routes, &(&1.address != identity)),
+      do: {:error, Error.not_sent(:validation, :contact_route_identity_mismatch)},
+      else: :ok
   end
 
   @spec valid_key?(term()) :: boolean()
   defp valid_key?(key) when is_atom(key), do: not is_nil(key)
-  defp valid_key?(key) when is_binary(key), do: String.trim(key) != ""
+  defp valid_key?(key) when is_binary(key), do: String.valid?(key) and String.trim(key) != ""
   defp valid_key?(_key), do: false
+
+  @spec valid_capability?(term()) :: boolean()
+  defp valid_capability?(capability) when is_atom(capability), do: not is_nil(capability)
+
+  defp valid_capability?(capability) when is_binary(capability),
+    do: capability != "" and String.valid?(capability)
+
+  defp valid_capability?(_capability), do: false
 
   @spec normalize_routes(term()) :: {:ok, [Route.t()]} | {:error, Error.t()}
   defp normalize_routes(routes) when is_list(routes) do

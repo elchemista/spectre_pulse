@@ -36,6 +36,7 @@ defmodule Spectre.Pulse.Fabric do
   @typep state :: %{
            transports: %{optional(transport_name()) => transport_entry()},
            routes: %{optional(String.t()) => route_entries()},
+           route_addresses: %{optional(term()) => String.t()},
            route_monitors: %{optional(term()) => reference()},
            monitor_routes: %{optional(reference()) => term()}
          }
@@ -68,6 +69,13 @@ defmodule Spectre.Pulse.Fabric do
           :ok | {:error, Error.t()}
   def register_transport(name, module, opts \\ []) do
     call({:register_transport, name, module, opts})
+  end
+
+  @doc false
+  @spec register_transports([{transport_name(), module(), [registration_option()]}]) ::
+          :ok | {:error, Error.t()}
+  def register_transports(registrations) do
+    call({:register_transports, registrations})
   end
 
   @doc "Returns the registered transport drivers."
@@ -115,6 +123,7 @@ defmodule Spectre.Pulse.Fabric do
      %{
        transports: transports,
        routes: %{},
+       route_addresses: %{},
        route_monitors: %{},
        monitor_routes: %{}
      }}
@@ -124,14 +133,15 @@ defmodule Spectre.Pulse.Fabric do
   @spec handle_call(term(), GenServer.from(), state()) :: {:reply, term(), state()}
   @impl GenServer
   def handle_call({:register_transport, name, module, opts}, _from, state) do
-    with :ok <- validate_transport_name(name),
-         :ok <- validate_transport(module),
-         :ok <- validate_registration_options(opts),
-         :ok <- ensure_replace_allowed(state.transports, name, module, opts) do
-      entry = transport_entry(Map.get(state.transports, name), module, opts)
+    case apply_transport_registrations([{name, module, opts}], state.transports) do
+      {:ok, transports} -> {:reply, :ok, %{state | transports: transports}}
+      {:error, %Error{} = error} -> {:reply, {:error, error}, state}
+    end
+  end
 
-      {:reply, :ok, put_in(state, [:transports, name], entry)}
-    else
+  def handle_call({:register_transports, registrations}, _from, state) do
+    case apply_transport_registrations(registrations, state.transports) do
+      {:ok, transports} -> {:reply, :ok, %{state | transports: transports}}
       {:error, %Error{} = error} -> {:reply, {:error, error}, state}
     end
   end
@@ -154,6 +164,7 @@ defmodule Spectre.Pulse.Fabric do
       state =
         state
         |> put_in([:routes, canonical], routes)
+        |> put_in([:route_addresses, route.id], canonical)
         |> monitor_route(route.id, owner)
 
       {:reply, {:ok, route}, state}
@@ -186,6 +197,57 @@ defmodule Spectre.Pulse.Fabric do
     end
   end
 
+  @spec apply_transport_registrations(term(), map()) ::
+          {:ok, map()} | {:error, Error.t()}
+  defp apply_transport_registrations(registrations, transports)
+       when is_list(registrations) do
+    with :ok <- ensure_unique_registration_names(registrations) do
+      Enum.reduce_while(registrations, {:ok, transports}, &apply_transport_registration/2)
+    end
+  end
+
+  defp apply_transport_registrations(registrations, _transports),
+    do: {:error, Error.not_sent(:validation, {:invalid_transport_registrations, registrations})}
+
+  @spec apply_transport_registration(term(), {:ok, map()}) ::
+          {:cont, {:ok, map()}} | {:halt, {:error, Error.t()}}
+  defp apply_transport_registration({name, module, opts}, {:ok, current}) do
+    with :ok <- validate_transport_name(name),
+         :ok <- validate_transport(module),
+         :ok <- validate_registration_options(opts),
+         :ok <- ensure_replace_allowed(current, name, module, opts) do
+      entry = transport_entry(Map.get(current, name), module, opts)
+      {:cont, {:ok, Map.put(current, name, entry)}}
+    else
+      {:error, %Error{} = error} -> {:halt, {:error, error}}
+    end
+  end
+
+  defp apply_transport_registration(registration, _acc) do
+    {:halt,
+     {:error, Error.not_sent(:validation, {:invalid_transport_registration, registration})}}
+  end
+
+  @spec ensure_unique_registration_names([term()]) :: :ok | {:error, Error.t()}
+  defp ensure_unique_registration_names(registrations) do
+    registrations
+    |> Enum.reduce_while(MapSet.new(), fn
+      {name, _module, _opts}, names ->
+        if MapSet.member?(names, name),
+          do:
+            {:halt,
+             {:error, Error.not_sent(:validation, {:duplicate_transport_registration, name})}},
+          else: {:cont, MapSet.put(names, name)}
+
+      _invalid, names ->
+        {:cont, names}
+    end)
+    |> case do
+      %MapSet{} -> :ok
+      {:error, %Error{} = error} -> {:error, error}
+    end
+  end
+
   @spec build_route(String.t(), transport_name(), term(), transport_entry(), keyword()) ::
           {:ok, Route.t()} | {:error, Error.t()}
   defp build_route(address, name, target, entry, opts) do
@@ -196,7 +258,7 @@ defmodule Spectre.Pulse.Fabric do
       |> Map.put_new(:discovered_by, :fabric)
 
     Route.new(
-      id: Keyword.get(opts, :id, Spectre.Identity.uuid7()),
+      id: Keyword.get_lazy(opts, :id, &Spectre.Identity.uuid7/0),
       address: address,
       transport: entry.module,
       target: target,
@@ -367,25 +429,35 @@ defmodule Spectre.Pulse.Fabric do
   @spec remove_route(state(), term(), boolean()) :: state()
   defp remove_route(state, route_id, demonitor? \\ true) do
     {monitor, route_monitors} = Map.pop(state.route_monitors, route_id)
+    {address, route_addresses} = Map.pop(state.route_addresses, route_id)
 
     if demonitor? and is_reference(monitor) do
       Process.demonitor(monitor, [:flush])
     end
 
-    routes =
-      Enum.reduce(state.routes, %{}, fn {address, entries}, acc ->
-        case Map.delete(entries, route_id) do
-          entries when map_size(entries) == 0 -> acc
-          entries -> Map.put(acc, address, entries)
-        end
-      end)
+    routes = remove_route_entry(state.routes, address, route_id)
 
     %{
       state
       | routes: routes,
+        route_addresses: route_addresses,
         route_monitors: route_monitors,
         monitor_routes: Map.delete(state.monitor_routes, monitor)
     }
+  end
+
+  @spec remove_route_entry(
+          %{optional(String.t()) => route_entries()},
+          String.t() | nil,
+          term()
+        ) :: %{optional(String.t()) => route_entries()}
+  defp remove_route_entry(routes, nil, _route_id), do: routes
+
+  defp remove_route_entry(routes, address, route_id) do
+    case routes |> Map.get(address, %{}) |> Map.delete(route_id) do
+      entries when map_size(entries) == 0 -> Map.delete(routes, address)
+      entries -> Map.put(routes, address, entries)
+    end
   end
 
   @spec call(term()) :: term()

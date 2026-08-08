@@ -94,13 +94,15 @@ defmodule Spectre.Pulse.ValueObjectsAndCodecTest do
   end
 
   test "generic codec dispatcher normalizes every adapter result", %{envelope: envelope} do
-    assert {:ok, :encoded} =
+    assert {:error, %Error{reason: {:invalid_encoded_value, :encoded}}} =
              Codec.encode(ReplyCodec, envelope, reply: {:ok, :encoded})
 
     existing = Error.outcome_unknown(:codec, :existing)
 
-    assert {:error, ^existing} =
+    assert {:error, %Error{reason: :existing, message_id: existing_message_id}} =
              Codec.encode(ReplyCodec, envelope, reply: {:error, existing})
+
+    assert existing_message_id == envelope.id
 
     assert {:error, %Error{kind: :codec, reason: :failed, message_id: message_id}} =
              Codec.encode(ReplyCodec, envelope, reply: {:error, :failed})
@@ -160,7 +162,7 @@ defmodule Spectre.Pulse.ValueObjectsAndCodecTest do
 
     invalid = %{envelope | metadata: %{callback: fn -> :ok end}}
 
-    assert {:error, %Error{reason: {:json_encode_failed, _reason}}} =
+    assert {:error, %Error{reason: {:metadata_not_encodable, _reason}}} =
              JSON.encode(invalid, [])
   end
 
@@ -217,6 +219,18 @@ defmodule Spectre.Pulse.ValueObjectsAndCodecTest do
 
     assert {:error, %Error{reason: {:invalid_identity_metadata, []}}} =
              Identity.new(address: "spectre://tests/agent", metadata: [])
+
+    assert {:error, %Error{reason: {:identity_metadata_not_encodable, %{pid: _pid}}}} =
+             Identity.new(address: "spectre://tests/agent", metadata: %{pid: self()})
+
+    assert {:error, %Error{reason: {:invalid_display_name, <<255>>}}} =
+             Identity.new(address: "spectre://tests/agent", display_name: <<255>>)
+
+    assert {:error, %Error{reason: {:invalid_capabilities, [<<255>>]}}} =
+             Identity.new(address: "spectre://tests/agent", capabilities: [<<255>>])
+
+    assert {:error, %Error{reason: {:invalid_options, %{}}}} =
+             Identity.new(%{address: "spectre://tests/agent"}, %{})
 
     assert {:error, %Error{reason: {:invalid_identity, :invalid}}} =
              Identity.new(:invalid)

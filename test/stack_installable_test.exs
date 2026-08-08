@@ -69,6 +69,7 @@ defmodule Spectre.Pulse.StackInstallableTest do
   use ExUnit.Case, async: true
 
   alias Spectre.Pulse.Address
+  alias Spectre.Pulse.Extension
   alias Spectre.Pulse.Stack, as: StackAdapter
   alias Spectre.Pulse.StackInstallableTest.Agent
   alias Spectre.Pulse.StackInstallableTest.Directory
@@ -81,9 +82,9 @@ defmodule Spectre.Pulse.StackInstallableTest do
   test "publishes the common Stack contract" do
     assert {:ok, package} = V1.verify_installable(Spectre.Pulse)
     assert package.id == :pulse
-    assert package.version == "0.1.6"
+    assert package.version == "0.2.0"
     assert package.contract == 1
-    assert package.spectre == "~> 0.1.5"
+    assert package.spectre == "~> 0.2.0"
     assert package.dsl == StackAdapter
     assert package.operations == []
     assert package.actions == []
@@ -153,5 +154,26 @@ defmodule Spectre.Pulse.StackInstallableTest do
       end
       """)
     end
+  end
+
+  test "rejects malformed Stack and compiled extension configuration" do
+    assert {:error, {:invalid_pulse_stack_options, :invalid}} =
+             StackAdapter.compile(:invalid, nil, __ENV__)
+
+    assert {:error, {:invalid_pulse_stack_options, [:invalid]}} =
+             StackAdapter.compile([:invalid], nil, __ENV__)
+
+    assert {:error, {:unknown_pulse_stack_options, [:unknown]}} =
+             StackAdapter.compile([unknown: true], nil, __ENV__)
+
+    assert {:error, {:invalid_pulse_transports, :invalid}} =
+             Extension.compile(__MODULE__,
+               stack_config: %{transports: :invalid}
+             )
+
+    assert {:error, {:unknown_pulse_stack_config, [:unknown]}} =
+             Extension.compile(__MODULE__,
+               stack_config: %{unknown: true}
+             )
   end
 end

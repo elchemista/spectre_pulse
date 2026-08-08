@@ -13,6 +13,8 @@ defmodule Spectre.Pulse.Transports.WebSocket do
   alias Spectre.Pulse.Envelope
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Inbound
+  alias Spectre.Pulse.InboundContext
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Reachability
   alias Spectre.Pulse.Receipt
   alias Spectre.Pulse.Route
@@ -33,7 +35,12 @@ defmodule Spectre.Pulse.Transports.WebSocket do
        )}
     else
       {:error, %Error{} = error} ->
-        {:error, %{error | route_id: error.route_id || route.id}}
+        {:error,
+         %{
+           error
+           | message_id: error.message_id || envelope.id,
+             route_id: error.route_id || route.id
+         }}
 
       {:error, {:not_sent, reason}} ->
         {:error, Error.not_sent(:transport, reason, message_id: envelope.id, route_id: route.id)}
@@ -55,8 +62,8 @@ defmodule Spectre.Pulse.Transports.WebSocket do
       case route.target do
         pid when is_pid(pid) -> if Process.alive?(pid), do: :reachable, else: :unreachable
         function when is_function(function, 1) -> :reachable
-        {_module, _connection} -> :reachable
-        %{module: _module, connection: _connection} -> :reachable
+        {module, _connection} when is_atom(module) -> sender_status(module)
+        %{module: module, connection: _connection} when is_atom(module) -> sender_status(module)
         _ -> :unknown
       end
 
@@ -72,16 +79,21 @@ defmodule Spectre.Pulse.Transports.WebSocket do
   @doc "Decodes one text/binary frame and invokes the ordinary inbound bridge."
   @spec handle_frame(binary(), Spectre.Pulse.InboundContext.t() | map(), keyword()) ::
           {:ok, Spectre.Pulse.Inbound.Result.t()} | {:error, Error.t()}
-  def handle_frame(frame, context, opts \\ []) when is_binary(frame) do
-    with {:ok, envelope} <- JSON.decode(frame, opts) do
-      context =
-        context
-        |> Map.new()
-        |> Map.put(:binding, :websocket)
+  def handle_frame(frame, context, opts \\ [])
 
-      Inbound.receive(envelope, context, opts)
+  def handle_frame(frame, context, opts) when is_binary(frame) do
+    with {:ok, opts} <- Options.keyword(opts),
+         {:ok, context} <- InboundContext.normalize(context),
+         {:ok, envelope} <- JSON.decode(frame, opts) do
+      Inbound.receive(envelope, %{context | binding: :websocket}, opts)
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
     end
   end
+
+  def handle_frame(frame, _context, _opts),
+    do: {:error, Error.not_sent(:codec, {:websocket_frame_expected_binary, frame})}
 
   @spec send_frame(term(), binary()) :: :ok | {:ok, term()} | {:error, term()} | term()
   defp send_frame(pid, frame) when is_pid(pid) do
@@ -93,11 +105,12 @@ defmodule Spectre.Pulse.Transports.WebSocket do
     end
   end
 
-  defp send_frame(function, frame) when is_function(function, 1), do: function.(frame)
+  defp send_frame(function, frame) when is_function(function, 1),
+    do: protected_send(fn -> function.(frame) end)
 
   defp send_frame({module, connection}, frame) when is_atom(module) do
     if Code.ensure_loaded?(module) and function_exported?(module, :send_frame, 2),
-      do: module.send_frame(connection, frame),
+      do: protected_send(fn -> module.send_frame(connection, frame) end),
       else: {:error, {:not_sent, {:invalid_websocket_sender, module}}}
   end
 
@@ -112,4 +125,25 @@ defmodule Spectre.Pulse.Transports.WebSocket do
   defp normalize_send({:ok, _value}), do: :ok
   defp normalize_send({:error, reason}), do: {:error, reason}
   defp normalize_send(other), do: {:error, {:invalid_websocket_send_result, other}}
+
+  @spec protected_send((-> term())) :: term()
+  defp protected_send(callback) do
+    callback.()
+  rescue
+    exception ->
+      {:error,
+       Error.outcome_unknown(:transport, {:websocket_sender_exception, exception},
+         cause: exception
+       )}
+  catch
+    kind, reason ->
+      {:error, Error.outcome_unknown(:transport, {:websocket_sender_exit, kind, reason})}
+  end
+
+  @spec sender_status(module()) :: :reachable | :unknown
+  defp sender_status(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :send_frame, 2),
+      do: :reachable,
+      else: :unknown
+  end
 end

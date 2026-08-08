@@ -105,6 +105,12 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
 
     assert {:error, %Error{reason: {:invalid_directory, %{invalid: true}}}} =
              Directory.resolve(%{invalid: true}, :receiver)
+
+    assert {:error, %Error{reason: {:invalid_options, %{}}}} =
+             Directory.resolve(book, :receiver, %{})
+
+    assert {:error, %Error{reason: {:invalid_directory, {DirectoryFixture, %{}}}}} =
+             Directory.resolve({DirectoryFixture, %{}}, :receiver)
   end
 
   test "directory normalizes every supported resolution value and configured options" do
@@ -224,6 +230,12 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
     assert {:ok, []} = Directory.routes(:not_loaded_directory, route.address)
     assert {:ok, []} = Directory.routes(%{}, route.address)
 
+    assert {:error, %Error{reason: {:invalid_options, %{}}}} =
+             Directory.routes(DirectoryFixture, route.address, %{})
+
+    assert {:error, %Error{reason: {:invalid_directory, {DirectoryFixture, %{}}}}} =
+             Directory.routes({DirectoryFixture, %{}}, route.address)
+
     existing = Error.not_sent(:routing, :existing)
 
     assert {:error, ^existing} =
@@ -253,6 +265,12 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
     assert {:ok, ^contacts} = Directory.contacts(ContactBook.new!(contacts), [])
     assert {:ok, []} = Directory.contacts(Protocol, [])
     assert {:ok, []} = Directory.contacts(%{}, [])
+
+    assert {:error, %Error{reason: {:invalid_options, %{}}}} =
+             Directory.contacts(DirectoryFixture, %{})
+
+    assert {:error, %Error{reason: {:invalid_directory, {DirectoryFixture, %{}}}}} =
+             Directory.contacts({DirectoryFixture, %{}}, [])
 
     assert {:error, ^existing} =
              Directory.contacts(DirectoryFixture, contacts_reply: {:error, existing})
@@ -372,8 +390,16 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
     receipt = Receipt.accepted(envelope.id, via: :test)
     existing = Error.not_sent(:transport, :existing)
 
-    assert {:ok, ^receipt} = Transport.dispatch(route, envelope, reply: {:ok, receipt})
-    assert {:error, ^existing} = Transport.dispatch(route, envelope, reply: {:error, existing})
+    assert {:ok, accepted} = Transport.dispatch(route, envelope, reply: {:ok, receipt})
+    assert accepted.message_id == receipt.message_id
+    assert accepted.via == receipt.via
+    assert accepted.route_id == route.id
+
+    assert {:error, %Error{reason: :existing, message_id: message_id, route_id: route_id}} =
+             Transport.dispatch(route, envelope, reply: {:error, existing})
+
+    assert message_id == envelope.id
+    assert route_id == route.id
 
     mismatch = Receipt.accepted(Spectre.Identity.uuid7())
 
@@ -397,6 +423,16 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
 
     assert {:error, %Error{reason: {:invalid_transport, Protocol}}} =
              Transport.dispatch(invalid_transport, envelope)
+
+    assert {:error, %Error{reason: {:invalid_route, :invalid}, message_id: message_id}} =
+             Transport.dispatch(:invalid, envelope)
+
+    assert message_id == envelope.id
+
+    assert {:error, %Error{reason: {:invalid_envelope, :invalid}, route_id: route_id}} =
+             Transport.dispatch(route, :invalid)
+
+    assert route_id == route.id
   end
 
   test "transport probes normalize supported and unsupported adapters", %{route: route} do
@@ -404,7 +440,11 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
     existing = Error.not_sent(:transport, :existing)
 
     assert {:ok, ^reachable} = Transport.probe(route, reply: {:ok, reachable})
-    assert {:error, ^existing} = Transport.probe(route, reply: {:error, existing})
+
+    assert {:error, %Error{reason: :existing, route_id: route_id}} =
+             Transport.probe(route, reply: {:error, existing})
+
+    assert route_id == route.id
 
     assert {:error, %Error{reason: :probe_failure}} =
              Transport.probe(route, reply: {:error, :probe_failure})
@@ -420,6 +460,9 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
 
     assert {:ok, %Reachability{status: :unknown, reason: :probe_not_supported}} =
              Transport.probe(%{route | transport: Protocol})
+
+    assert {:error, %Error{reason: {:invalid_route, :invalid}}} =
+             Transport.probe(:invalid)
   end
 
   test "network dispatcher supports modules, configured modules and functions", %{
@@ -431,8 +474,10 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
     assert {:ok, ^receipt} =
              Network.deliver({NetworkFixture, reply: {:ok, receipt}}, envelope)
 
-    assert {:error, ^existing} =
+    assert {:error, %Error{reason: :existing, message_id: message_id}} =
              Network.deliver(NetworkFixture, envelope, reply: {:error, existing})
+
+    assert message_id == envelope.id
 
     assert {:error, %Error{reason: :network_failure, outcome: :outcome_unknown}} =
              Network.deliver(NetworkFixture, envelope, reply: {:error, :network_failure})
@@ -456,6 +501,9 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
 
     assert {:error, %Error{reason: {:invalid_network, %{invalid: true}}}} =
              Network.deliver(%{invalid: true}, envelope)
+
+    assert {:error, %Error{reason: {:invalid_envelope, :invalid}}} =
+             Network.deliver(NetworkFixture, :invalid)
   end
 
   test "network probes normalize all callback results" do
@@ -484,7 +532,7 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
     assert {:ok, %Reachability{reason: :probe_not_supported}} =
              Network.probe(Protocol, address)
 
-    assert {:ok, %Reachability{reason: :invalid_network}} =
+    assert {:error, %Error{reason: {:invalid_network, %{}}}} =
              Network.probe(%{}, address)
   end
 
@@ -502,8 +550,11 @@ defmodule Spectre.Pulse.DirectoryNetworkContractTest do
     assert {:error, %Error{reason: {:all_routes_not_sent, [_error]}}} =
              Network.deliver(nil, envelope, routes: [route], reply: {:error, not_sent})
 
-    assert {:ok, %Reachability{reason: :no_route}} =
+    assert {:error, %Error{reason: {:invalid_route, :invalid}}} =
              Network.probe(nil, envelope.to, routes: [:invalid])
+
+    assert {:error, %Error{reason: {:invalid_route, :invalid}}} =
+             Network.deliver(nil, envelope, routes: [:invalid])
 
     assert {:ok, %Reachability{status: :reachable}} =
              Network.probe(Routed, envelope.to,

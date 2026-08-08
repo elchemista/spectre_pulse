@@ -7,6 +7,7 @@ defmodule Spectre.Pulse.Identity do
 
   alias Spectre.Pulse.Address
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Protocol
 
   @enforce_keys [:address]
@@ -25,37 +26,38 @@ defmodule Spectre.Pulse.Identity do
   def new(address_or_attrs, opts \\ [])
 
   def new(address, opts) when is_binary(address) do
-    new(Keyword.put(opts, :address, address))
+    case Options.keyword(opts) do
+      {:ok, opts} -> new(Keyword.put(opts, :address, address), [])
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
+    end
   end
 
-  def new(attrs, opts) when is_list(attrs), do: attrs |> Map.new() |> new(opts)
+  def new(attrs, opts) when is_list(attrs) do
+    if Keyword.keyword?(attrs),
+      do: attrs |> Map.new() |> new(opts),
+      else: {:error, Error.not_sent(:validation, {:invalid_identity, attrs})}
+  end
 
-  def new(attrs, _opts) when is_map(attrs) do
-    with {:ok, address} <- Address.normalize(attr(attrs, :address)) do
-      versions = attr(attrs, :protocol_versions, [Protocol.version()])
-      capabilities = attr(attrs, :capabilities, [])
-      metadata = attr(attrs, :metadata, %{})
-
-      cond do
-        not is_list(versions) or Protocol.version() not in versions ->
-          {:error, Error.not_sent(:validation, {:invalid_protocol_versions, versions})}
-
-        not is_list(capabilities) ->
-          {:error, Error.not_sent(:validation, {:invalid_capabilities, capabilities})}
-
-        not is_map(metadata) ->
-          {:error, Error.not_sent(:validation, {:invalid_identity_metadata, metadata})}
-
-        true ->
-          {:ok,
-           %__MODULE__{
-             address: address,
-             display_name: attr(attrs, :display_name),
-             protocol_versions: versions,
-             capabilities: Enum.uniq(capabilities),
-             metadata: metadata
-           }}
-      end
+  def new(attrs, opts) when is_map(attrs) do
+    with {:ok, opts} <- Options.keyword(opts),
+         attrs <- Map.merge(attrs, Map.new(opts)),
+         {:ok, address} <- Address.normalize(attr(attrs, :address)),
+         {:ok, versions} <-
+           validate_versions(attr(attrs, :protocol_versions, [Protocol.version()])),
+         {:ok, display_name} <- validate_display_name(attr(attrs, :display_name)),
+         {:ok, capabilities} <- validate_capabilities(attr(attrs, :capabilities, [])),
+         {:ok, metadata} <- validate_metadata(attr(attrs, :metadata, %{})) do
+      {:ok,
+       %__MODULE__{
+         address: address,
+         display_name: display_name,
+         protocol_versions: versions,
+         capabilities: capabilities,
+         metadata: metadata
+       }}
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
     end
   end
 
@@ -86,4 +88,67 @@ defmodule Spectre.Pulse.Identity do
   @spec attr(map(), atom(), term()) :: term()
   defp attr(map, key, default \\ nil),
     do: Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+
+  @spec valid_version?(term()) :: boolean()
+  defp valid_version?(version), do: is_integer(version) and version > 0
+
+  @spec validate_versions(term()) :: {:ok, [pos_integer()]} | {:error, Error.t()}
+  defp validate_versions(versions) when is_list(versions) do
+    if Enum.all?(versions, &valid_version?/1) and Protocol.version() in versions,
+      do: {:ok, Enum.uniq(versions)},
+      else: {:error, Error.not_sent(:validation, {:invalid_protocol_versions, versions})}
+  end
+
+  defp validate_versions(versions),
+    do: {:error, Error.not_sent(:validation, {:invalid_protocol_versions, versions})}
+
+  @spec validate_display_name(term()) :: {:ok, String.t() | nil} | {:error, Error.t()}
+  defp validate_display_name(nil), do: {:ok, nil}
+
+  defp validate_display_name(display_name) when is_binary(display_name) do
+    if String.valid?(display_name),
+      do: {:ok, display_name},
+      else: {:error, Error.not_sent(:validation, {:invalid_display_name, display_name})}
+  end
+
+  defp validate_display_name(display_name),
+    do: {:error, Error.not_sent(:validation, {:invalid_display_name, display_name})}
+
+  @spec validate_capabilities(term()) ::
+          {:ok, [atom() | String.t()]} | {:error, Error.t()}
+  defp validate_capabilities(capabilities) when is_list(capabilities) do
+    if Enum.all?(capabilities, &valid_capability?/1),
+      do: {:ok, Enum.uniq(capabilities)},
+      else: {:error, Error.not_sent(:validation, {:invalid_capabilities, capabilities})}
+  end
+
+  defp validate_capabilities(capabilities),
+    do: {:error, Error.not_sent(:validation, {:invalid_capabilities, capabilities})}
+
+  @spec valid_capability?(term()) :: boolean()
+  defp valid_capability?(capability) when is_atom(capability), do: not is_nil(capability)
+
+  defp valid_capability?(capability) when is_binary(capability),
+    do: capability != "" and String.valid?(capability)
+
+  defp valid_capability?(_capability), do: false
+
+  @spec validate_metadata(term()) :: {:ok, map()} | {:error, Error.t()}
+  defp validate_metadata(metadata) when is_map(metadata) do
+    if json_encodable?(metadata),
+      do: {:ok, metadata},
+      else: {:error, Error.not_sent(:validation, {:identity_metadata_not_encodable, metadata})}
+  end
+
+  defp validate_metadata(metadata),
+    do: {:error, Error.not_sent(:validation, {:invalid_identity_metadata, metadata})}
+
+  @spec json_encodable?(map()) :: boolean()
+  defp json_encodable?(value) do
+    match?({:ok, _encoded}, Jason.encode(value))
+  rescue
+    _exception -> false
+  catch
+    _kind, _reason -> false
+  end
 end
