@@ -6,6 +6,17 @@
   no Hex or path fallback, and remove Hex package metadata and package build CI.
 - Stabilize multi-Run Effect ownership coverage by waiting for the Spectre
   Instance scheduler to release the completed Run before resuming the next.
+- Harden every public Pulse boundary so malformed options, restored values,
+  callback replies, identities, routes, and transport inputs return typed
+  errors instead of leaking exceptions or accepting ambiguous state.
+- Lock REST delivery to validated HTTP(S) POST requests with bounded response
+  streaming, protected Req options, strict headers, disabled redirects/retries,
+  and explicit inbound authentication semantics.
+- Make Fabric transport batches atomic, reject duplicate registrations, and
+  ensure Effect execution uses only transports compiled into the Agent Stack.
+- Validate runtime, directory, network, local subscription, DSL, and Stack
+  configuration before side effects while preserving message and route context
+  across all failure paths.
 
 ## 0.2.0 — 2026-08-01
 

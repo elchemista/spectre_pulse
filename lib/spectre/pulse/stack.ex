@@ -43,9 +43,16 @@ defmodule Spectre.Pulse.Stack do
     end
   end
 
-  @spec validate_options(keyword()) :: :ok | {:error, term()}
+  @spec validate_options(term()) :: :ok | {:error, term()}
   defp validate_options([]), do: :ok
-  defp validate_options(opts), do: {:error, {:unknown_pulse_stack_options, Keyword.keys(opts)}}
+
+  defp validate_options(opts) when is_list(opts) do
+    if Keyword.keyword?(opts),
+      do: {:error, {:unknown_pulse_stack_options, Keyword.keys(opts)}},
+      else: {:error, {:invalid_pulse_stack_options, opts}}
+  end
+
+  defp validate_options(opts), do: {:error, {:invalid_pulse_stack_options, opts}}
 
   @spec compile_transports([{atom(), [term()]}]) ::
           {:ok, [%{id: atom(), module: module()}]} | {:error, term()}

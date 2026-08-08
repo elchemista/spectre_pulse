@@ -12,6 +12,7 @@ defmodule Spectre.Pulse.Local do
   alias Spectre.Pulse.Address
   alias Spectre.Pulse.Config
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Route
 
   @registry Spectre.Pulse.Local.Registry
@@ -19,7 +20,9 @@ defmodule Spectre.Pulse.Local do
 
   @doc "Subscribes a Pulse-enabled Agent on its compiled logical identity."
   @spec subscribe(module(), keyword()) :: DynamicSupervisor.on_start_child()
-  def subscribe(agent, opts \\ []) when is_atom(agent) and is_list(opts) do
+  def subscribe(agent, opts \\ [])
+
+  def subscribe(agent, opts) when is_atom(agent) and not is_nil(agent) do
     with {:ok, identity, _endpoint, _endpoint_opts} <- subscription(agent, opts) do
       case lookup(identity) do
         {:ok, pid, %{agent: ^agent}} ->
@@ -35,6 +38,9 @@ defmodule Spectre.Pulse.Local do
   catch
     :exit, reason -> {:error, {:local_supervisor_unavailable, reason}}
   end
+
+  def subscribe(agent, _opts),
+    do: {:error, Error.not_sent(:validation, {:invalid_pulse_agent, agent})}
 
   @doc "Returns the Registry name used by one canonical local subscription."
   @spec via(String.t()) :: {:via, Registry, {module(), String.t()}}
@@ -82,28 +88,53 @@ defmodule Spectre.Pulse.Local do
   @doc false
   @spec subscription(module(), keyword()) ::
           {:ok, String.t(), term(), keyword()} | {:error, Error.t()}
-  def subscription(agent, opts) do
-    with {:ok, config} <- Config.fetch(agent),
+  def subscription(agent, opts) when is_atom(agent) and not is_nil(agent) do
+    with {:ok, opts} <- Options.keyword(opts),
+         :ok <- validate_owner(Keyword.get(opts, :owner)),
+         {:ok, inbound} <- Options.keyword(Keyword.get(opts, :inbound, [])),
+         {:ok, config} <- Config.fetch(agent),
          {:ok, identity} <-
            Address.normalize(Keyword.get(opts, :identity, config.identity)) do
       endpoint = Keyword.get(opts, :endpoint, agent)
 
       endpoint_opts =
         config.inbound
-        |> Keyword.merge(Keyword.get(opts, :inbound, []))
+        |> Keyword.merge(inbound)
         |> maybe_put(:on_result, Keyword.get(opts, :on_result))
 
       {:ok, identity, endpoint, endpoint_opts}
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
     end
   end
+
+  def subscription(agent, _opts),
+    do: {:error, Error.not_sent(:validation, {:invalid_pulse_agent, agent})}
 
   @spec lookup_canonical(String.t()) :: {:ok, pid(), map()} | :error
   defp lookup_canonical(address) do
     case Registry.lookup(@registry, address) do
-      [{pid, metadata}] when is_pid(pid) -> {:ok, pid, Map.new(metadata)}
+      [{pid, metadata}] when is_pid(pid) -> normalize_registry_entry(pid, metadata)
       _other -> :error
     end
   end
+
+  @spec normalize_registry_entry(pid(), term()) :: {:ok, pid(), map()} | :error
+  defp normalize_registry_entry(pid, metadata) when is_map(metadata),
+    do: {:ok, pid, metadata}
+
+  defp normalize_registry_entry(pid, metadata) when is_list(metadata) do
+    if Keyword.keyword?(metadata), do: {:ok, pid, Map.new(metadata)}, else: :error
+  end
+
+  defp normalize_registry_entry(_pid, _metadata), do: :error
+
+  @spec validate_owner(term()) :: :ok | {:error, Error.t()}
+  defp validate_owner(owner) when is_nil(owner) or is_pid(owner), do: :ok
+
+  defp validate_owner(owner),
+    do: {:error, Error.not_sent(:validation, {:invalid_subscription_owner, owner})}
 
   @spec maybe_put(keyword(), atom(), term()) :: keyword()
   defp maybe_put(opts, _key, nil), do: opts

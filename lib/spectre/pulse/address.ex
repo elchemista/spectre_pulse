@@ -7,6 +7,7 @@ defmodule Spectre.Pulse.Address do
   """
 
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Protocol
 
   @agent_namespace "spectre-pulse/agent/v1:"
@@ -22,14 +23,18 @@ defmodule Spectre.Pulse.Address do
   @doc "Parses and canonicalizes a Pulse address."
   @spec new(t() | String.t(), keyword()) :: {:ok, t()} | {:error, Error.t()}
   def new(address, opts \\ [])
-  def new(%__MODULE__{} = address, _opts), do: {:ok, address}
+  def new(%__MODULE__{value: value}, opts), do: new(value, opts)
 
   def new(address, opts) when is_binary(address) do
-    max_bytes =
-      opts
-      |> Keyword.get(:max_address_bytes, Protocol.default_limits().max_address_bytes)
-
-    with :ok <- validate_size(address, max_bytes),
+    with {:ok, opts} <- Options.keyword(opts),
+         {:ok, max_bytes} <-
+           Options.positive_integer(
+             opts,
+             :max_address_bytes,
+             Protocol.default_limits().max_address_bytes
+           ),
+         :ok <- validate_text(address),
+         :ok <- validate_size(address, max_bytes),
          %URI{} = uri <- URI.parse(address),
          :ok <- validate_uri(uri),
          {:ok, agent} <- normalize_agent(uri.path) do
@@ -111,6 +116,15 @@ defmodule Spectre.Pulse.Address do
   defp validate_size(address, max_bytes),
     do: {:error, {:address_too_large, byte_size(address), max_bytes}}
 
+  @spec validate_text(binary()) :: :ok | {:error, term()}
+  defp validate_text(address) do
+    cond do
+      not String.valid?(address) -> {:error, :invalid_utf8}
+      Regex.match?(~r/[\x00-\x20\x7F]/u, address) -> {:error, :invalid_whitespace}
+      true -> :ok
+    end
+  end
+
   @spec validate_uri(URI.t()) :: :ok | {:error, term()}
   defp validate_uri(%URI{
          scheme: scheme,
@@ -133,9 +147,7 @@ defmodule Spectre.Pulse.Address do
   defp validate_uri(_uri), do: {:error, :address_must_be_logical}
 
   @spec normalize_agent(String.t()) :: {:ok, String.t()} | {:error, term()}
-  defp normalize_agent(path) do
-    agent = String.trim_leading(path, "/")
-
+  defp normalize_agent("/" <> agent) do
     cond do
       agent == "" ->
         {:error, :agent_required}
@@ -143,19 +155,28 @@ defmodule Spectre.Pulse.Address do
       String.ends_with?(agent, "/") ->
         {:error, {:invalid_agent, agent}}
 
-      String.contains?(agent, ["//", "\\"]) ->
+      String.contains?(agent, ["//", "\\", "%"]) ->
         {:error, {:invalid_agent, agent}}
 
-      not String.valid?(agent) ->
-        {:error, {:invalid_agent, :invalid_utf8}}
+      agent
+      |> String.split("/", trim: false)
+      |> Enum.any?(&(&1 in ["", ".", ".."])) ->
+        {:error, {:invalid_agent, agent}}
 
       true ->
         {:ok, agent}
     end
   end
 
+  defp normalize_agent(path), do: {:error, {:invalid_agent, path}}
+
   @spec valid_authority?(String.t()) :: boolean()
   defp valid_authority?(authority) do
-    Regex.match?(~r/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/, authority)
+    authority
+    |> String.split(".", trim: false)
+    |> Enum.all?(fn label ->
+      byte_size(label) <= 63 and
+        Regex.match?(~r/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/, label)
+    end)
   end
 end

@@ -18,6 +18,7 @@ defmodule Spectre.Pulse.Inbound do
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Inbound.Result
   alias Spectre.Pulse.InboundContext
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Receipt
   alias Spectre.Subject
 
@@ -27,9 +28,10 @@ defmodule Spectre.Pulse.Inbound do
   @spec receive(Envelope.t() | map(), InboundContext.t() | map() | keyword(), keyword()) ::
           {:ok, Result.t()} | {:error, Error.t()}
   def receive(envelope, context, opts \\ []) do
-    context = InboundContext.new(context)
-
-    with {:ok, envelope} <- Envelope.new(envelope, opts),
+    with {:ok, opts} <- Options.keyword(opts),
+         :ok <- validate_authentication_options(opts),
+         {:ok, context} <- InboundContext.normalize(context),
+         {:ok, envelope} <- Envelope.new(envelope, opts),
          {:ok, canonical_sender, authenticated?} <-
            authenticate_sender(envelope, context, opts),
          {:ok, logical_target} <- resolve_target(envelope.to, context, opts),
@@ -43,7 +45,7 @@ defmodule Spectre.Pulse.Inbound do
          {:ok, conversation_id} <-
            state_scope(config.state_scope, logical_target, envelope, context),
          input <- put_source_conversation(input, conversation_id),
-         turn_opts <- turn_options(envelope, conversation_id, merged_opts),
+         {:ok, turn_opts} <- turn_options(envelope, conversation_id, merged_opts),
          {:ok, target} <-
            resolve_instance_target(logical_target, context, merged_opts, envelope),
          {:ok, turn} <- run_turn(target, input, turn_opts, envelope),
@@ -62,6 +64,12 @@ defmodule Spectre.Pulse.Inbound do
          turn: turn,
          receipt: receipt
        }}
+    else
+      {:error, %Error{} = error} ->
+        {:error, error}
+
+      {:error, reason} ->
+        {:error, Error.not_sent(:validation, reason, message_id: message_id(envelope))}
     end
   end
 
@@ -69,10 +77,24 @@ defmodule Spectre.Pulse.Inbound do
   @spec to_input(Envelope.t(), InboundContext.t() | map(), keyword()) ::
           {:ok, Spectre.Input.t()} | {:error, Error.t()}
   def to_input(%Envelope{} = envelope, context, opts \\ []) do
-    context = InboundContext.new(context)
-
-    with {:ok, sender, authenticated?} <- authenticate_sender(envelope, context, opts) do
+    with {:ok, opts} <- Options.keyword(opts),
+         :ok <- validate_authentication_options(opts),
+         {:ok, context} <- InboundContext.normalize(context),
+         {:ok, envelope} <- Envelope.new(envelope, opts),
+         {:ok, sender, authenticated?} <- authenticate_sender(envelope, context, opts) do
       build_input(envelope, context, sender, authenticated?, opts)
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason, message_id: envelope.id)}
+    end
+  end
+
+  @spec validate_authentication_options(keyword()) :: :ok | {:error, term()}
+  defp validate_authentication_options(opts) do
+    case Keyword.fetch(opts, :allow_unauthenticated) do
+      :error -> :ok
+      {:ok, value} when is_boolean(value) -> :ok
+      {:ok, value} -> {:error, {:invalid_allow_unauthenticated, value}}
     end
   end
 
@@ -146,6 +168,9 @@ defmodule Spectre.Pulse.Inbound do
   @spec normalize_target_resolution(term(), String.t()) :: {:ok, term()} | {:error, Error.t()}
   defp normalize_target_resolution({:ok, target}, _address) when not is_nil(target),
     do: {:ok, target}
+
+  defp normalize_target_resolution({:ok, nil}, address),
+    do: {:error, Error.not_sent(:routing, {:target_not_found, address})}
 
   defp normalize_target_resolution({:error, reason}, _address),
     do: {:error, Error.not_sent(:routing, reason)}
@@ -244,7 +269,7 @@ defmodule Spectre.Pulse.Inbound do
 
   defp call_authorizer(authorization, envelope, context, target)
        when is_atom(authorization) do
-    if function_exported?(authorization, :authorize, 3) do
+    if Code.ensure_loaded?(authorization) and function_exported?(authorization, :authorize, 3) do
       safe_apply(
         authorization,
         :authorize,
@@ -368,6 +393,10 @@ defmodule Spectre.Pulse.Inbound do
       {:ok, text} -> text
       {:error, _reason} -> inspect(data, limit: 20, printable_limit: 2_000)
     end
+  rescue
+    _exception -> inspect(data, limit: 20, printable_limit: 2_000)
+  catch
+    _kind, _reason -> inspect(data, limit: 20, printable_limit: 2_000)
   end
 
   @spec normalize_input(term()) :: {:ok, Spectre.Input.t()} | {:error, Error.t()}
@@ -415,19 +444,26 @@ defmodule Spectre.Pulse.Inbound do
 
   defp normalize_state_scope(value), do: {:ok, value}
 
-  @spec turn_options(Envelope.t(), term(), keyword()) :: keyword()
+  @spec turn_options(Envelope.t(), term(), keyword()) ::
+          {:ok, keyword()} | {:error, Error.t()}
   defp turn_options(envelope, conversation_id, opts) do
     trace_id = Map.get(envelope.metadata, "trace_id", Map.get(envelope.metadata, :trace_id))
 
-    opts
-    |> Keyword.get(:turn_opts, [])
-    |> Keyword.merge(Keyword.take(opts, [:state, :assigns, :memory, :timeout]))
-    |> Keyword.put(:conversation_id, conversation_id)
-    |> Keyword.put(:origin_conversation_id, conversation_id)
-    |> Keyword.put(:turn_id, envelope.id)
-    |> Keyword.put(:trace_id, trace_id || envelope.id)
-    |> Keyword.put(:causation_id, envelope.id)
-    |> Keyword.put(:correlation_id, envelope.relates_to)
+    case Options.keyword(Keyword.get(opts, :turn_opts, [])) do
+      {:ok, turn_opts} ->
+        {:ok,
+         turn_opts
+         |> Keyword.merge(Keyword.take(opts, [:state, :assigns, :memory, :timeout]))
+         |> Keyword.put(:conversation_id, conversation_id)
+         |> Keyword.put(:origin_conversation_id, conversation_id)
+         |> Keyword.put(:turn_id, envelope.id)
+         |> Keyword.put(:trace_id, trace_id || envelope.id)
+         |> Keyword.put(:causation_id, envelope.id)
+         |> Keyword.put(:correlation_id, envelope.relates_to)}
+
+      {:error, reason} ->
+        {:error, Error.not_sent(:validation, {:invalid_turn_options, reason})}
+    end
   end
 
   @spec resolve_instance_target(
@@ -500,16 +536,16 @@ defmodule Spectre.Pulse.Inbound do
           {:error, Error.not_sent(:routing, :instance_not_found, message_id: envelope.id)}
       end
     rescue
-      exception in ArgumentError ->
+      exception ->
         {:error,
          Error.not_sent(:routing, {:invalid_instance_target, Exception.message(exception)},
            message_id: envelope.id,
            cause: exception
          )}
     catch
-      :exit, reason ->
+      kind, reason ->
         {:error,
-         Error.not_sent(:routing, {:instance_registry_unavailable, reason},
+         Error.not_sent(:routing, {:instance_registry_unavailable, kind, reason},
            message_id: envelope.id
          )}
     end
@@ -523,6 +559,7 @@ defmodule Spectre.Pulse.Inbound do
           keyword(),
           Envelope.t()
         ) :: {:ok, pid()} | {:error, Error.t()}
+  @dialyzer {:nowarn_function, start_instance: 6}
   defp start_instance(supervisor, agent_ref, subject, registry, instance_opts, envelope) do
     opts =
       instance_opts
@@ -542,6 +579,12 @@ defmodule Spectre.Pulse.Inbound do
 
       :ignore ->
         {:error, Error.not_sent(:routing, :instance_start_ignored, message_id: envelope.id)}
+
+      other ->
+        {:error,
+         Error.not_sent(:routing, {:invalid_instance_start_result, other},
+           message_id: envelope.id
+         )}
     end
   end
 
@@ -598,6 +641,11 @@ defmodule Spectre.Pulse.Inbound do
   defp inspect_target(target) when is_atom(target), do: Atom.to_string(target)
   defp inspect_target(target) when is_pid(target), do: inspect(target)
   defp inspect_target(_target), do: "host_target"
+
+  @spec message_id(term()) :: String.t() | nil
+  defp message_id(%Envelope{id: id}) when is_binary(id), do: id
+  defp message_id(map) when is_map(map), do: Map.get(map, :id, Map.get(map, "id"))
+  defp message_id(_value), do: nil
 
   @spec safe_callback(function(), [term()], callback_label()) :: term()
   defp safe_callback(function, args, label) do

@@ -13,6 +13,7 @@ defmodule Spectre.Pulse.Transports.PubSub do
   alias Spectre.Pulse.Envelope
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.InboundContext
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Reachability
   alias Spectre.Pulse.Receipt
   alias Spectre.Pulse.Route
@@ -33,6 +34,14 @@ defmodule Spectre.Pulse.Transports.PubSub do
       {:ok, _value} ->
         {:ok, Receipt.accepted(envelope.id, via: :pub_sub, route_id: route.id)}
 
+      {:error, %Error{} = error} ->
+        {:error,
+         %{
+           error
+           | message_id: error.message_id || envelope.id,
+             route_id: error.route_id || route.id
+         }}
+
       {:error, reason} ->
         {:error, Error.not_sent(:transport, reason, message_id: envelope.id, route_id: route.id)}
 
@@ -46,10 +55,17 @@ defmodule Spectre.Pulse.Transports.PubSub do
   rescue
     exception ->
       {:error,
-       Error.not_sent(:transport, {:pub_sub_exception, exception},
+       Error.outcome_unknown(:transport, {:pub_sub_exception, exception},
          message_id: envelope.id,
          route_id: route.id,
          cause: exception
+       )}
+  catch
+    kind, reason ->
+      {:error,
+       Error.outcome_unknown(:transport, {:pub_sub_exit, kind, reason},
+         message_id: envelope.id,
+         route_id: route.id
        )}
   end
 
@@ -80,7 +96,9 @@ defmodule Spectre.Pulse.Transports.PubSub do
 
   def handle_message({:spectre_pulse, %Envelope{} = envelope}, context, opts)
       when is_list(opts) do
-    handle_message({:spectre_pulse, envelope}, nil, context, opts)
+    if Keyword.keyword?(opts),
+      do: handle_message({:spectre_pulse, envelope}, nil, context, opts),
+      else: {:error, Error.not_sent(:validation, {:invalid_options, opts})}
   end
 
   def handle_message(_message, _context, _opts) do
@@ -96,12 +114,18 @@ defmodule Spectre.Pulse.Transports.PubSub do
         ) :: {:ok, Receipt.t()} | {:error, Error.t()}
   def handle_message({:spectre_pulse, %Envelope{} = envelope}, endpoint, context, opts)
       when is_list(opts) do
-    context =
-      context
-      |> Map.new()
-      |> Map.put(:binding, :pub_sub)
-
-    Endpoint.accept(endpoint, envelope, context, Keyword.put(opts, :via, :pub_sub))
+    with {:ok, opts} <- Options.keyword(opts),
+         {:ok, context} <- InboundContext.normalize(context) do
+      Endpoint.accept(
+        endpoint,
+        envelope,
+        %{context | binding: :pub_sub},
+        Keyword.put(opts, :via, :pub_sub)
+      )
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
+    end
   end
 
   def handle_message(_message, _endpoint, _context, _opts) do

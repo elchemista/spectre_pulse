@@ -11,6 +11,7 @@ defmodule Spectre.Pulse.Directory do
   alias Spectre.Pulse.ContactBook
   alias Spectre.Pulse.Directory.Resolution
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Route
 
   @callback resolve(term(), keyword()) ::
@@ -27,9 +28,15 @@ defmodule Spectre.Pulse.Directory do
 
   @doc "Resolves through a contact book, module, configured module, or function."
   @spec resolve(term(), term(), keyword()) :: {:ok, Resolution.t()} | {:error, Error.t()}
-  def resolve(source, reference, opts \\ [])
+  def resolve(source, reference, opts \\ []) do
+    case Options.keyword(opts) do
+      {:ok, opts} -> do_resolve(source, reference, opts)
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
+    end
+  end
 
-  def resolve(%ContactBook{} = book, reference, _opts) do
+  @spec do_resolve(term(), term(), keyword()) :: {:ok, Resolution.t()} | {:error, Error.t()}
+  defp do_resolve(%ContactBook{} = book, reference, _opts) do
     with {:ok, address} <- ContactBook.resolve(book, reference) do
       contact =
         case ContactBook.fetch(book, reference) do
@@ -48,45 +55,66 @@ defmodule Spectre.Pulse.Directory do
     end
   end
 
-  def resolve(nil, reference, _opts) when is_binary(reference) do
+  defp do_resolve(nil, reference, _opts) when is_binary(reference) do
     with {:ok, address} <- Address.normalize(reference) do
       {:ok, %Resolution{reference: reference, address: address, source: :address}}
     end
   end
 
-  def resolve(nil, reference, _opts),
+  defp do_resolve(nil, reference, _opts),
     do: {:error, Error.not_sent(:routing, {:unknown_contact, reference})}
 
-  def resolve({module, source_opts}, reference, opts)
-      when is_atom(module) and is_list(source_opts) do
-    resolve_module(module, reference, Keyword.merge(source_opts, opts))
+  defp do_resolve({module, source_opts}, reference, opts)
+       when is_atom(module) and is_list(source_opts) do
+    if Keyword.keyword?(source_opts) do
+      resolve_module(module, reference, Keyword.merge(source_opts, opts))
+    else
+      {:error, Error.not_sent(:routing, {:invalid_directory, {module, source_opts}})}
+    end
   end
 
-  def resolve(module, reference, opts) when is_atom(module) do
+  defp do_resolve({module, source_opts}, _reference, _opts) when is_atom(module),
+    do: {:error, Error.not_sent(:routing, {:invalid_directory, {module, source_opts}})}
+
+  defp do_resolve(module, reference, opts) when is_atom(module) do
     resolve_module(module, reference, opts)
   end
 
-  def resolve(function, reference, opts) when is_function(function, 2) do
+  defp do_resolve(function, reference, opts) when is_function(function, 2) do
     function
     |> safe_call([reference, opts])
     |> normalize_resolution(reference, function, opts)
   end
 
-  def resolve(source, _reference, _opts),
+  defp do_resolve(source, _reference, _opts),
     do: {:error, Error.not_sent(:routing, {:invalid_directory, source})}
 
   @doc "Fetches and normalizes routes from a directory source."
   @spec routes(term(), String.t(), keyword()) :: {:ok, [Route.t()]} | {:error, Error.t()}
-  def routes(source, address, opts \\ [])
+  def routes(source, address, opts \\ []) do
+    case Options.keyword(opts) do
+      {:ok, opts} -> do_routes(source, address, opts)
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
+    end
+  end
 
-  def routes(%ContactBook{} = book, address, _opts),
+  @spec do_routes(term(), String.t(), keyword()) :: {:ok, [Route.t()]} | {:error, Error.t()}
+  defp do_routes(%ContactBook{} = book, address, _opts),
     do: {:ok, ContactBook.routes(book, address)}
 
-  def routes({module, source_opts}, address, opts)
-      when is_atom(module) and is_list(source_opts),
-      do: routes(module, address, Keyword.merge(source_opts, opts))
+  defp do_routes({module, source_opts}, address, opts)
+       when is_atom(module) and is_list(source_opts) do
+    if Keyword.keyword?(source_opts) do
+      do_routes(module, address, Keyword.merge(source_opts, opts))
+    else
+      {:error, Error.not_sent(:routing, {:invalid_directory, {module, source_opts}})}
+    end
+  end
 
-  def routes(module, address, opts) when is_atom(module) do
+  defp do_routes({module, source_opts}, _address, _opts) when is_atom(module),
+    do: {:error, Error.not_sent(:routing, {:invalid_directory, {module, source_opts}})}
+
+  defp do_routes(module, address, opts) when is_atom(module) do
     if Code.ensure_loaded?(module) and function_exported?(module, :routes, 2) do
       module
       |> safe_call(:routes, [address, opts])
@@ -96,16 +124,32 @@ defmodule Spectre.Pulse.Directory do
     end
   end
 
-  def routes(_source, _address, _opts), do: {:ok, []}
+  defp do_routes(_source, _address, _opts), do: {:ok, []}
 
   @doc "Lists contacts exposed by a source when supported."
   @spec contacts(term(), keyword()) :: {:ok, [Contact.t()]} | {:error, Error.t()}
-  def contacts(%ContactBook{} = book, _opts), do: {:ok, ContactBook.contacts(book)}
+  def contacts(source, opts \\ []) do
+    case Options.keyword(opts) do
+      {:ok, opts} -> do_contacts(source, opts)
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
+    end
+  end
 
-  def contacts({module, source_opts}, opts) when is_atom(module) and is_list(source_opts),
-    do: contacts(module, Keyword.merge(source_opts, opts))
+  @spec do_contacts(term(), keyword()) :: {:ok, [Contact.t()]} | {:error, Error.t()}
+  defp do_contacts(%ContactBook{} = book, _opts), do: {:ok, ContactBook.contacts(book)}
 
-  def contacts(module, opts) when is_atom(module) do
+  defp do_contacts({module, source_opts}, opts) when is_atom(module) and is_list(source_opts) do
+    if Keyword.keyword?(source_opts) do
+      do_contacts(module, Keyword.merge(source_opts, opts))
+    else
+      {:error, Error.not_sent(:routing, {:invalid_directory, {module, source_opts}})}
+    end
+  end
+
+  defp do_contacts({module, source_opts}, _opts) when is_atom(module),
+    do: {:error, Error.not_sent(:routing, {:invalid_directory, {module, source_opts}})}
+
+  defp do_contacts(module, opts) when is_atom(module) do
     if Code.ensure_loaded?(module) and function_exported?(module, :contacts, 1) do
       module
       |> safe_call(:contacts, [opts])
@@ -115,7 +159,7 @@ defmodule Spectre.Pulse.Directory do
     end
   end
 
-  def contacts(_source, _opts), do: {:ok, []}
+  defp do_contacts(_source, _opts), do: {:ok, []}
 
   @spec resolve_module(module(), term(), keyword()) ::
           {:ok, Resolution.t()} | {:error, Error.t()}
@@ -142,7 +186,8 @@ defmodule Spectre.Pulse.Directory do
   end
 
   defp normalize_resolution(%Contact{} = contact, reference, source, opts) do
-    with {:ok, extra_routes} <- routes(source, contact.identity, opts) do
+    with {:ok, contact} <- Contact.new(contact),
+         {:ok, extra_routes} <- routes(source, contact.identity, opts) do
       {:ok,
        %Resolution{
          reference: reference,
@@ -195,7 +240,7 @@ defmodule Spectre.Pulse.Directory do
       end
     end)
     |> case do
-      {:ok, normalized} -> {:ok, Enum.sort_by(normalized, & &1.priority)}
+      {:ok, normalized} -> {:ok, normalized |> Enum.reverse() |> Enum.sort_by(& &1.priority)}
       error -> error
     end
   end

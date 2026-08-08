@@ -7,6 +7,9 @@ defmodule Spectre.Pulse.Expectation do
   """
 
   alias Spectre.Pulse.Envelope
+  alias Spectre.Pulse.Options
+  alias Spectre.Pulse.Payload
+  alias Spectre.Pulse.Validator
 
   @enforce_keys [:message_id, :contact, :waiting_for, :status, :opened_at]
   defstruct [
@@ -37,15 +40,24 @@ defmodule Spectre.Pulse.Expectation do
   @doc "Opens an expectation for an outbound message."
   @spec new(String.t(), term(), waiting_for(), keyword()) :: t()
   def new(message_id, contact, waiting_for \\ :reply, opts \\ []) do
-    %__MODULE__{
-      message_id: message_id,
-      contact: contact,
-      waiting_for: normalize_waiting_for(waiting_for),
-      status: :open,
-      opened_at: Keyword.get(opts, :opened_at, DateTime.utc_now()),
-      due_at: Keyword.get(opts, :due_at),
-      metadata: Keyword.get(opts, :metadata, %{})
-    }
+    with true <- Validator.valid_id?(message_id),
+         {:ok, opts} <- Options.keyword(opts),
+         {:ok, waiting_for} <- normalize_waiting_for(waiting_for) do
+      expectation = %__MODULE__{
+        message_id: message_id,
+        contact: contact,
+        waiting_for: waiting_for,
+        status: :open,
+        opened_at: Keyword.get_lazy(opts, :opened_at, &DateTime.utc_now/0),
+        due_at: Keyword.get(opts, :due_at),
+        metadata: Keyword.get(opts, :metadata, %{})
+      }
+
+      validate!(expectation)
+    else
+      false -> raise ArgumentError, "invalid expectation message id: #{inspect(message_id)}"
+      {:error, reason} -> raise ArgumentError, inspect(reason)
+    end
   end
 
   @doc "Returns whether an incoming envelope satisfies this expectation."
@@ -84,14 +96,45 @@ defmodule Spectre.Pulse.Expectation do
 
   def expire(%__MODULE__{} = expectation, _now), do: expectation
 
-  @spec normalize_waiting_for(waiting_for()) :: :reply | {:type, String.t()}
-  defp normalize_waiting_for({:type, type}), do: {:type, type}
-  defp normalize_waiting_for(type) when is_binary(type), do: {:type, type}
-  defp normalize_waiting_for(:reply), do: :reply
+  @spec normalize_waiting_for(waiting_for()) ::
+          {:ok, :reply | {:type, String.t()}} | {:error, term()}
+  defp normalize_waiting_for(:reply), do: {:ok, :reply}
+
+  defp normalize_waiting_for({:type, type}), do: normalize_waiting_for(type)
+
+  defp normalize_waiting_for(type) when is_binary(type) do
+    case Payload.new(type: type) do
+      {:ok, _payload} -> {:ok, {:type, type}}
+      {:error, error} -> {:error, error.reason}
+    end
+  end
+
+  defp normalize_waiting_for(value), do: {:error, {:invalid_expectation_type, value}}
 
   @spec type_matches?(t(), Envelope.t()) :: boolean()
   defp type_matches?(%__MODULE__{waiting_for: :reply}, _envelope), do: true
 
-  defp type_matches?(%__MODULE__{waiting_for: {:type, type}}, envelope),
-    do: envelope.payload.type == type
+  defp type_matches?(%__MODULE__{waiting_for: {:type, type}}, %Envelope{
+         payload: %Payload{} = payload
+       }),
+       do: payload.type == type
+
+  defp type_matches?(%__MODULE__{}, %Envelope{}), do: false
+
+  @spec validate!(t()) :: t()
+  defp validate!(expectation) do
+    cond do
+      not is_struct(expectation.opened_at, DateTime) ->
+        raise ArgumentError, "invalid expectation opened_at"
+
+      not is_nil(expectation.due_at) and not is_struct(expectation.due_at, DateTime) ->
+        raise ArgumentError, "invalid expectation due_at"
+
+      not is_map(expectation.metadata) ->
+        raise ArgumentError, "invalid expectation metadata"
+
+      true ->
+        expectation
+    end
+  end
 end

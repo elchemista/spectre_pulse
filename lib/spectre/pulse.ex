@@ -20,6 +20,7 @@ defmodule Spectre.Pulse do
   alias Spectre.Pulse.Executor
   alias Spectre.Pulse.Inbound
   alias Spectre.Pulse.Network
+  alias Spectre.Pulse.Options
   alias Spectre.Pulse.Protocol
   alias Spectre.Pulse.Runtime
   alias Spectre.Pulse.Stack, as: StackAdapter
@@ -45,18 +46,24 @@ defmodule Spectre.Pulse do
   transport drivers.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  def start_link(opts), do: Runtime.start_link(opts)
+  def start_link(opts \\ []), do: Runtime.start_link(opts)
 
   @doc false
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(opts) do
-    id = Keyword.get(opts, :id, __MODULE__)
+    case Options.keyword(opts) do
+      {:ok, opts} ->
+        id = Keyword.get(opts, :id, __MODULE__)
 
-    %{
-      id: id,
-      start: {__MODULE__, :start_link, [Keyword.delete(opts, :id)]},
-      type: :worker
-    }
+        %{
+          id: id,
+          start: {__MODULE__, :start_link, [Keyword.delete(opts, :id)]},
+          type: :worker
+        }
+
+      {:error, reason} ->
+        raise ArgumentError, inspect(reason)
+    end
   end
 
   @doc """
@@ -69,7 +76,7 @@ defmodule Spectre.Pulse do
   defmacro __using__(opts \\ []) do
     opts = Macro.expand(opts, __CALLER__)
 
-    unless is_list(opts) do
+    unless is_list(opts) and Keyword.keyword?(opts) do
       raise ArgumentError, "use Spectre.Pulse expects a keyword list"
     end
 
@@ -116,15 +123,25 @@ defmodule Spectre.Pulse do
   """
   @spec deliver(Envelope.t(), keyword()) ::
           {:ok, Spectre.Pulse.Receipt.t()} | {:error, Spectre.Pulse.Error.t()}
+  def deliver(envelope, opts \\ [])
+
   def deliver(%Envelope{} = envelope, opts) do
-    with {:ok, routes} <- Discovery.routes(envelope.to, opts) do
+    with {:ok, opts} <- Options.keyword(opts),
+         {:ok, envelope} <- Envelope.new(envelope, opts),
+         {:ok, routes} <- Discovery.routes(envelope.to, opts) do
       Network.deliver(
         Keyword.get(opts, :network),
         envelope,
         Keyword.put(opts, :routes, routes)
       )
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason, message_id: envelope.id)}
     end
   end
+
+  def deliver(envelope, _opts),
+    do: {:error, Error.not_sent(:validation, {:invalid_envelope, envelope})}
 
   @doc """
   Subscribes a Pulse-enabled Agent at its logical address on this BEAM node.
@@ -228,7 +245,8 @@ defmodule Spectre.Pulse do
         ) ::
           {:ok, Spectre.Pulse.Reachability.t()} | {:error, Spectre.Pulse.Error.t()}
   def reachability(source, reference, opts \\ []) do
-    with {:ok, agent, state} <- agent_and_state(source),
+    with {:ok, opts} <- Options.keyword(opts),
+         {:ok, agent, state} <- agent_and_state(source),
          {:ok, config} <- Config.fetch(agent),
          book <-
            if(state,
@@ -249,6 +267,9 @@ defmodule Spectre.Pulse do
              |> Keyword.put(:routes, resolution.routes)
            ) do
       Network.probe(config.network, resolution.address, Keyword.put(opts, :routes, routes))
+    else
+      {:error, %Error{} = error} -> {:error, error}
+      {:error, reason} -> {:error, Error.not_sent(:validation, reason)}
     end
   end
 
@@ -300,8 +321,9 @@ defmodule Spectre.Pulse do
 
   @spec agent_and_state(module() | Context.t() | {module(), State.t()}) ::
           {:ok, module(), State.t() | nil} | {:error, Error.t()}
-  defp agent_and_state(%Context{agent: agent, state: state}),
-    do: {:ok, agent, state}
+  defp agent_and_state(%Context{agent: agent, state: state})
+       when is_atom(agent) and (is_nil(state) or is_struct(state, State)),
+       do: {:ok, agent, state}
 
   defp agent_and_state({agent, %State{} = state}) when is_atom(agent),
     do: {:ok, agent, state}

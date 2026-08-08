@@ -10,10 +10,15 @@ defmodule Spectre.Pulse.DSL do
   alias Spectre.Pulse.Config
   alias Spectre.Pulse.Contact
   alias Spectre.Pulse.EffectBuilder
+  alias Spectre.Pulse.InboundContext
 
   @doc false
   @spec install!(module(), keyword()) :: :ok
   def install!(module, opts) when is_atom(module) and is_list(opts) do
+    unless Keyword.keyword?(opts) do
+      raise ArgumentError, "Spectre.Pulse extension options must be a keyword list"
+    end
+
     unless Module.has_attribute?(module, :spectre_config) and
              Module.has_attribute?(module, :spectre_rules) do
       raise ArgumentError, "use Spectre.Agent must appear before use Spectre.Pulse"
@@ -36,6 +41,10 @@ defmodule Spectre.Pulse.DSL do
     Module.put_attribute(module, :spectre_pulse_advertise, %{})
     Module.put_attribute(module, :spectre_pulse_inbound, Keyword.get(opts, :inbound, []))
     :ok
+  end
+
+  def install!(_module, _opts) do
+    raise ArgumentError, "Spectre.Pulse extension options must be a keyword list"
   end
 
   @doc "Groups the declarative Pulse configuration."
@@ -204,8 +213,7 @@ defmodule Spectre.Pulse.DSL do
       @spec __spectre_pulse_stage__(Spectre.Input.t(), Spectre.Context.t()) ::
               {:ok, Spectre.Result.t()} | {:error, term()}
       def __spectre_pulse_stage__(input, ctx) do
-        opts = Keyword.fetch!(ctx.opts, :spectre_pulse)
-        EffectBuilder.stage(__MODULE__, input, ctx, opts)
+        EffectBuilder.stage_from_context(__MODULE__, input, ctx)
       end
 
       @doc "Receives one envelope through the normal Pulse inbound bridge."
@@ -216,11 +224,14 @@ defmodule Spectre.Pulse.DSL do
             ) ::
               {:ok, Spectre.Pulse.Inbound.Result.t()} | {:error, Spectre.Pulse.Error.t()}
       def handle_pulse(envelope, inbound_context, opts \\ []) do
-        Spectre.Pulse.receive(
-          envelope,
-          Map.put(Map.new(inbound_context), :target, __MODULE__),
-          opts
-        )
+        with {:ok, inbound_context} <-
+               InboundContext.normalize(inbound_context) do
+          Spectre.Pulse.receive(
+            envelope,
+            %{inbound_context | target: __MODULE__},
+            opts
+          )
+        end
       end
 
       defoverridable handle_pulse: 3
@@ -251,15 +262,19 @@ defmodule Spectre.Pulse.DSL do
   @doc false
   @spec rewrite_route_opts(value) :: keyword() | value when value: term()
   def rewrite_route_opts(opts) when is_list(opts) do
-    case Keyword.pop(opts, :pulse) do
-      {nil, opts} ->
-        opts
+    if Keyword.keyword?(opts) do
+      case Keyword.pop(opts, :pulse) do
+        {nil, opts} ->
+          opts
 
-      {type, opts} ->
-        opts
-        |> add_pulse_check(type)
-        |> add_default_pulse_evidence()
-        |> Keyword.put_new(:cache, false)
+        {type, opts} ->
+          opts
+          |> add_pulse_check(type)
+          |> add_default_pulse_evidence()
+          |> Keyword.put_new(:cache, false)
+      end
+    else
+      opts
     end
   end
 

@@ -29,8 +29,8 @@ defmodule Spectre.Pulse.Runtime do
          }
 
   @doc false
-  @spec start_link([option()]) :: GenServer.on_start()
-  def start_link(opts) when is_list(opts) do
+  @spec start_link([option()] | term()) :: GenServer.on_start()
+  def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
@@ -124,14 +124,7 @@ defmodule Spectre.Pulse.Runtime do
   end
 
   @spec register_transports([normalized_transport()]) :: :ok | {:error, Error.t()}
-  defp register_transports(transports) do
-    Enum.reduce_while(transports, :ok, fn {name, module, opts}, :ok ->
-      case Fabric.register_transport(name, module, opts) do
-        :ok -> {:cont, :ok}
-        {:error, %Error{} = error} -> {:halt, {:error, error}}
-      end
-    end)
-  end
+  defp register_transports(transports), do: Fabric.register_transports(transports)
 
   @spec discover_agents() :: {:ok, [module()]} | {:error, Error.t()}
   defp discover_agents do

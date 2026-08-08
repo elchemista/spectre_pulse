@@ -53,6 +53,8 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Executor
   alias Spectre.Pulse.Expectation
+  alias Spectre.Pulse.Fabric
+  alias Spectre.Pulse.Handler
   alias Spectre.Pulse.Route
   alias Spectre.Pulse.State, as: PulseState
 
@@ -352,6 +354,80 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
     assert id == pending.id
   end
 
+  test "effect builder rejects malformed boundaries before staging", %{
+    input: input,
+    context: context
+  } do
+    assert {:error, {:invalid_options, :invalid}} =
+             EffectBuilder.stage(Agent, input, context, :invalid)
+
+    assert {:error, {:invalid_options, [:invalid]}} =
+             EffectBuilder.stage(Agent, input, context, [:invalid])
+
+    other_context = %{context | agent: String}
+
+    assert {:error, {:pulse_agent_context_mismatch, Agent, String}} =
+             EffectBuilder.stage(Agent, input, other_context,
+               to: :receiver,
+               type: "effects.perform"
+             )
+
+    assert {:error, %Error{reason: {:invalid_pulse_stage, Agent, ^input, _, _}}} =
+             EffectBuilder.stage(Agent, input, %{context | state: nil},
+               to: :receiver,
+               type: "effects.perform"
+             )
+
+    invalid_cases = [
+      {[to: :receiver, type: "effects.perform", id: "invalid"], {:invalid_message_id, "invalid"}},
+      {[to: :receiver, type: "INVALID"], {:invalid_payload_type, "INVALID"}},
+      {[to: :receiver, type: "effects.perform", metadata: %{callback: fn -> :ok end}],
+       {:metadata_not_encodable, Protocol.UndefinedError}},
+      {[to: :receiver, type: "effects.perform", expect: true, due_at: :tomorrow],
+       {:invalid_expectation_due_at, :tomorrow}},
+      {[
+         to: :receiver,
+         type: "effects.perform",
+         expect: true,
+         expectation_metadata: :invalid
+       ], {:invalid_expectation_metadata, :invalid}},
+      {[to: :receiver, type: "effects.perform", build: {Builders, :missing, []}],
+       {:undefined_pulse_builder, Builders, :missing, 2}}
+    ]
+
+    for {opts, expected} <- invalid_cases do
+      assert {:error, actual} = EffectBuilder.stage(Agent, input, context, opts)
+
+      case {expected, actual} do
+        {{:metadata_not_encodable, Protocol.UndefinedError},
+         %Error{reason: {:metadata_not_encodable, %Protocol.UndefinedError{}}}} ->
+          :ok
+
+        {reason, %Error{reason: reason}} ->
+          :ok
+
+        {reason, reason} ->
+          :ok
+
+        other ->
+          flunk("unexpected boundary result: #{inspect(other)}")
+      end
+    end
+
+    id = Spectre.Identity.uuid7()
+
+    assert {:error, %Error{reason: :message_cannot_relate_to_itself}} =
+             EffectBuilder.stage(Agent, input, context,
+               to: :receiver,
+               type: "effects.perform",
+               id: id,
+               relates_to: id
+             )
+
+    assert {:error, :pulse_stage_options_required} =
+             Handler.stage(input, context)
+  end
+
   test "executor delegates successful delivery to the canonical Spectre lifecycle", %{
     input: input,
     context: context
@@ -408,6 +484,54 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
 
     assert [%Spectre.Effect{status: :completed}] = ownerless.effects
     assert_receive {:effect_delivered, _ownerless_envelope}
+  end
+
+  test "executor uses only compiled Stack transports and validates restored effects", %{
+    input: input,
+    context: context
+  } do
+    assert {:ok, staged} =
+             EffectBuilder.stage(Agent, input, context,
+               to: :receiver,
+               type: "effects.perform"
+             )
+
+    route =
+      Route.new!(
+        id: "trusted-effect-route",
+        address: "spectre://effects/receiver",
+        transport: AcceptTransport,
+        target: self()
+      )
+
+    injected = String.to_atom("injected_#{System.unique_integer([:positive])}")
+
+    assert {:ok, _executed} =
+             Executor.execute(Agent, staged,
+               routes: [route],
+               transports: [%{id: injected, module: AcceptTransport}]
+             )
+
+    refute Map.has_key?(Fabric.transports(), injected)
+    assert_receive {:effect_delivered, _envelope}
+
+    effect = Spectre.State.pending_effect(staged.state)
+
+    assert {:error, %Error{reason: {:invalid_pulse_effect_payload, :invalid}}} =
+             Executor.deliver(Agent, %{effect | payload: :invalid}, %Spectre.State{})
+
+    assert {:error, %Error{reason: {:pulse_effect_field_missing, :to}}} =
+             Executor.deliver(
+               Agent,
+               %{effect | payload: Map.delete(effect.payload, :to)},
+               %Spectre.State{}
+             )
+
+    assert {:error, %Error{reason: {:invalid_options, :invalid}}} =
+             Executor.deliver(Agent, effect, %Spectre.State{}, :invalid)
+
+    assert {:error, {:invalid_pulse_assigns, :invalid}} =
+             Executor.execute_pending(staged.state, Agent, assigns: :invalid)
   end
 
   test "executor updates turns and records unambiguous delivery failure", %{
@@ -550,6 +674,15 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
       end
       """)
     end
+
+    assert_raise ArgumentError, ~r/use Spectre.Pulse expects a keyword list/, fn ->
+      Code.compile_string("""
+      defmodule Spectre.Pulse.InvalidKeywordOptions#{suffix} do
+        use Spectre.Agent
+        use Spectre.Pulse, [:invalid]
+      end
+      """)
+    end
   end
 
   test "contacts and contact books reject malformed data and keep indexes coherent" do
@@ -571,9 +704,13 @@ defmodule Spectre.Pulse.EffectExecutorDSLTest do
     invalid_contacts = [
       {%{key: nil, identity: address}, {:invalid_contact_key, nil}},
       {%{key: "", identity: address}, {:invalid_contact_key, ""}},
+      {%{key: <<255>>, identity: address}, {:invalid_contact_key, <<255>>}},
       {%{key: 1, identity: address}, {:invalid_contact_key, 1}},
+      {%{key: :one, identity: address, display_name: <<255>>}, {:invalid_display_name, <<255>>}},
       {%{key: :one, identity: address, capabilities: :invalid},
        {:invalid_capabilities, :invalid}},
+      {%{key: :one, identity: address, capabilities: [<<255>>]},
+       {:invalid_capabilities, [<<255>>]}},
       {%{key: :one, identity: address, metadata: []}, {:invalid_contact_metadata, []}},
       {%{key: :one, identity: address, routes: :invalid}, {:invalid_contact_routes, :invalid}}
     ]

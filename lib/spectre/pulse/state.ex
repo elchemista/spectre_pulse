@@ -73,9 +73,10 @@ defmodule Spectre.Pulse.State do
   @doc "Returns the expectation map stored in Spectre state."
   @spec expectations(Spectre.State.t()) :: %{optional(String.t()) => Expectation.t()}
   def expectations(%Spectre.State{} = state) do
-    state.data
-    |> pulse_data()
-    |> Map.get(:expectations, %{})
+    case state.data |> pulse_data() |> Map.get(:expectations, %{}) do
+      expectations when is_map(expectations) -> expectations
+      _invalid -> %{}
+    end
   end
 
   @doc "Returns a new state with an expectation stored by outbound message id."
@@ -106,13 +107,26 @@ defmodule Spectre.Pulse.State do
   end
 
   @spec pulse_data(map()) :: map()
-  defp pulse_data(data) when is_map(data), do: Map.get(data, :pulse, %{})
+  defp pulse_data(data) when is_map(data) do
+    case Map.get(data, :pulse, %{}) do
+      pulse when is_map(pulse) -> pulse
+      _invalid -> %{}
+    end
+  end
+
+  defp pulse_data(_data), do: %{}
 
   @spec put_pulse_data(Spectre.State.t(), atom(), term()) :: Spectre.State.t()
   defp put_pulse_data(%Spectre.State{} = state, key, value) do
     pulse = state.data |> pulse_data() |> Map.put(key, value)
-    %{state | data: Map.put(state.data, :pulse, pulse)}
+    data = normalize_state_data(state.data)
+    %{state | data: Map.put(data, :pulse, pulse)}
   end
+
+  @spec normalize_state_data(term()) :: map()
+  @dialyzer {:nowarn_function, normalize_state_data: 1}
+  defp normalize_state_data(data) when is_map(data), do: data
+  defp normalize_state_data(_data), do: %{}
 
   @spec normalize_contact_values(term()) :: [Contact.t() | map() | keyword()]
   defp normalize_contact_values(contacts) when is_map(contacts), do: Map.values(contacts)
