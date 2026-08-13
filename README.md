@@ -3,13 +3,13 @@
 Spectre Pulse is a transport-independent protocol for communication between
 [Spectre](https://github.com/elchemista/spectre) agents.
 
-The exact `0.2.0` compatibility surface is published in the
+The exact `0.3.0` compatibility surface is published in the
 [public API manifest](docs/PUBLIC_API.md).
 
-## 0.2.0 Spectre Compatibility
+## 0.3.0 Spectre Compatibility
 
-Version `0.2.0` aligns Pulse and its complete ecosystem conformance Stack with
-Spectre `~> 0.2.0`. Protocol v1 and its permanent `0.1.6` wire fixture remain
+Version `0.3.0` aligns Pulse and its complete ecosystem conformance Stack with
+Spectre `~> 0.3.0`. Protocol v1 and its permanent `0.1.6` wire fixture remain
 unchanged; the core still owns policy, Effect lifecycle, idempotency, Runs,
 Work, Vigil, and canonical persistence.
 
@@ -94,21 +94,20 @@ The JSON representation is specified by
 
 ## Installation
 
-Install directly from GitHub:
+Install Spectre from Hex and Pulse from its GitHub release tag:
 
 ```elixir
 def deps do
   [
-    {:spectre,
-     github: "elchemista/spectre",
-     tag: "0.2.0"},
-    {:spectre_pulse, github: "elchemista/spectre_pulse", tag: "v0.2.0"}
+    {:spectre, "~> 0.3.0"},
+    {:spectre_pulse, github: "elchemista/spectre_pulse", tag: "v0.3.0"}
   ]
 end
 ```
 
-Spectre Pulse is distributed exclusively from GitHub; there is no Hex or
-path-based Spectre dependency in its manifest.
+Spectre Pulse is distributed from GitHub and depends on the stable Spectre
+`0.3.x` package from Hex. The Pulse manifest has no Git or path fallback for
+the core dependency.
 
 Pulse requires Elixir 1.19 or later.
 
@@ -299,7 +298,7 @@ only Tao's logical address and declared capabilities.
 
 ## Route inbound work to a Spectre Instance
 
-Pulse 0.2.0 can hand an authenticated envelope to the core Instance selected
+Pulse 0.3.0 can hand an authenticated envelope to the core Instance selected
 by an explicit `AgentRef + Subject`. The trusted host or transport supplies
 the Subject and the supervisor; Pulse never infers a Subject from an address,
 sender name, or message:

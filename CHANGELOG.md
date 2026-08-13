@@ -2,8 +2,15 @@
 
 ## Unreleased
 
-- Make every Spectre ecosystem dependency an explicit GitHub dependency with
-  no Hex or path fallback, and remove Hex package metadata and package build CI.
+## 0.3.0 — 2026-08-13
+
+- Align Pulse and the complete ecosystem conformance Stack with Spectre 0.3.0.
+- Resolve the core dependency from Hex with `~> 0.3.0`, while the unpublished
+  satellite libraries continue to be distributed from GitHub.
+- Keep every unpublished satellite dependency explicit on GitHub with no path
+  fallback and retain GitHub-only satellite package distribution.
+- Migrate the full-ecosystem prompt fixture to Spectre 0.3's closed,
+  data-only template renderer.
 - Stabilize multi-Run Effect ownership coverage by waiting for the Spectre
   Instance scheduler to release the completed Run before resuming the next.
 - Harden every public Pulse boundary so malformed options, restored values,
