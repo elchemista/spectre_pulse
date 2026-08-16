@@ -1,7 +1,7 @@
 defmodule SpectrePulse.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.1.0"
   @source_url "https://github.com/elchemista/spectre_pulse"
 
   def project do
@@ -33,35 +33,17 @@ defmodule SpectrePulse.MixProject do
       # Pulse deliberately depends on Spectre, never the other way around.
       spectre_dep(),
       {:spectre_beam,
-       github: "elchemista/spectre_beam",
-       branch: "agent/ecosystem-0.3.0",
-       only: :test,
-       runtime: false},
+       github: "elchemista/spectre_beam", branch: "main", only: :test, runtime: false},
       {:spectre_directive,
-       github: "elchemista/spectre_directive",
-       branch: "agent/ecosystem-0.3.0",
-       only: :test,
-       runtime: false},
+       github: "elchemista/spectre_directive", branch: "main", only: :test, runtime: false},
       {:spectre_kinetic,
-       github: "elchemista/spectre_kinetic",
-       branch: "agent/ecosystem-0.3.0",
-       only: :test,
-       runtime: false},
+       github: "elchemista/spectre_kinetic", branch: "main", only: :test, runtime: false},
       {:spectre_lens,
-       github: "elchemista/spectre_lens",
-       branch: "agent/ecosystem-0.3.0",
-       only: :test,
-       runtime: false},
+       github: "elchemista/spectre_lens", branch: "main", only: :test, runtime: false},
       {:spectre_mnemonic,
-       github: "elchemista/spectre_mnemonic",
-       branch: "agent/ecosystem-0.3.0",
-       only: :test,
-       runtime: false},
+       github: "elchemista/spectre_mnemonic", branch: "main", only: :test, runtime: false},
       {:spectre_prism,
-       github: "elchemista/spectre_prism",
-       branch: "agent/ecosystem-0.3.0",
-       only: :test,
-       runtime: false},
+       github: "elchemista/spectre_prism", branch: "main", only: :test, runtime: false},
       {:jason, "~> 1.4"},
       {:req, "~> 0.5"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},

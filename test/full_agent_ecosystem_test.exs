@@ -407,17 +407,17 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
     {:ok, mnemonic_namespace: mnemonic_namespace}
   end
 
-  test "Pulse 0.3.0 remains compatible with the complete 0.3.0 ecosystem", context do
+  test "Pulse remains compatible with the complete ecosystem", context do
     assert Enum.map(Definition.fetch!(Stack).installations, fn installation ->
              {installation.package.id, installation.package.version}
            end) == [
-             prism: "0.3.0",
-             kinetic: "0.3.0",
-             mnemonic: "0.3.0",
-             directive: "0.3.0",
-             lens: "0.3.0",
-             beam: "0.3.0",
-             pulse: "0.3.0"
+             prism: "0.1.0",
+             kinetic: "0.1.0",
+             mnemonic: "0.1.0",
+             directive: "0.1.0",
+             lens: "0.1.0",
+             beam: "0.1.0",
+             pulse: "0.1.0"
            ]
 
     assert {:ok, stack_runtime} =
