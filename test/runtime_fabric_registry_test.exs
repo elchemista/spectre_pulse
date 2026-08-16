@@ -53,6 +53,16 @@ defmodule Spectre.Pulse.RuntimeFabricRegistryTest do
   alias __MODULE__.TransportA
   alias __MODULE__.TransportB
 
+  setup do
+    on_exit(fn ->
+      stop_runtime()
+      terminate_subscription("spectre://registry/agent-a")
+      terminate_subscription("spectre://registry/agent-b")
+    end)
+
+    :ok
+  end
+
   test "Fabric validates every transport registration contract" do
     name = unique_atom("transport")
 
@@ -146,8 +156,15 @@ defmodule Spectre.Pulse.RuntimeFabricRegistryTest do
                Fabric.connect(route_address, transport, target, opts)
     end
 
-    dead = spawn(fn -> :ok end)
+    dead =
+      spawn(fn ->
+        receive do
+          :stop -> :ok
+        end
+      end)
+
     monitor = Process.monitor(dead)
+    send(dead, :stop)
     assert_receive {:DOWN, ^monitor, :process, ^dead, :normal}
 
     assert {:error, %Error{reason: :connection_owner_not_alive}} =
@@ -452,5 +469,14 @@ defmodule Spectre.Pulse.RuntimeFabricRegistryTest do
       :error ->
         :ok
     end
+  end
+
+  defp stop_runtime do
+    case Process.whereis(Runtime) do
+      pid when is_pid(pid) -> GenServer.stop(pid)
+      nil -> :ok
+    end
+  catch
+    :exit, _reason -> :ok
   end
 end

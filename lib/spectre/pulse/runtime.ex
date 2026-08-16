@@ -15,6 +15,9 @@ defmodule Spectre.Pulse.Runtime do
   alias Spectre.Pulse.Fabric
   alias Spectre.Pulse.Local
 
+  @registry_cleanup_attempts 50
+  @registry_cleanup_delay_ms 10
+
   @type transport_config ::
           {atom(), module()}
           | {atom(), module(), keyword()}
@@ -285,7 +288,7 @@ defmodule Spectre.Pulse.Runtime do
   defp replace_orphaned_subscription(pid, agent, identity, owned) do
     case DynamicSupervisor.terminate_child(Spectre.Pulse.Local.Supervisor, pid) do
       :ok ->
-        start_owned_subscription(agent, identity, owned)
+        await_orphaned_subscription_removal(pid, agent, identity, owned)
 
       {:error, reason} ->
         stop_subscriptions_and_error(
@@ -293,6 +296,43 @@ defmodule Spectre.Pulse.Runtime do
           {:orphaned_subscription_cleanup_failed, agent, reason}
         )
     end
+  end
+
+  @spec await_orphaned_subscription_removal(
+          pid(),
+          module(),
+          String.t(),
+          [String.t()],
+          non_neg_integer()
+        ) :: {:cont, {:ok, [String.t()]}} | {:halt, {:error, Error.t()}}
+  defp await_orphaned_subscription_removal(
+         pid,
+         agent,
+         identity,
+         owned,
+         attempts \\ @registry_cleanup_attempts
+       )
+
+  defp await_orphaned_subscription_removal(pid, agent, identity, owned, attempts)
+       when attempts > 0 do
+    case Local.lookup(identity) do
+      :error ->
+        start_owned_subscription(agent, identity, owned)
+
+      {:ok, ^pid, _metadata} ->
+        Process.sleep(@registry_cleanup_delay_ms)
+        await_orphaned_subscription_removal(pid, agent, identity, owned, attempts - 1)
+
+      lookup ->
+        reconcile_lookup(lookup, agent, identity, owned)
+    end
+  end
+
+  defp await_orphaned_subscription_removal(_pid, agent, _identity, owned, 0) do
+    stop_subscriptions_and_error(
+      owned,
+      {:orphaned_subscription_cleanup_failed, agent, :registry_cleanup_timeout}
+    )
   end
 
   @spec start_owned_subscription(module(), String.t(), [String.t()]) ::
