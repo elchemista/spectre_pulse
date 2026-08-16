@@ -31,7 +31,7 @@ defmodule SpectrePulse.MixProject do
   defp deps do
     [
       # Pulse deliberately depends on Spectre, never the other way around.
-      {:spectre, "~> 0.3.0", override: true},
+      spectre_dep(),
       {:spectre_beam,
        github: "elchemista/spectre_beam",
        branch: "agent/ecosystem-0.3.0",
@@ -68,6 +68,16 @@ defmodule SpectrePulse.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
+  end
+
+  defp spectre_dep do
+    case System.get_env("SPECTRE_PATH") do
+      path when is_binary(path) and path != "" ->
+        {:spectre, path: Path.expand(path, __DIR__), override: true}
+
+      _unset ->
+        {:spectre, "~> 0.3.0", override: true}
+    end
   end
 
   defp docs do
