@@ -12,7 +12,7 @@ defmodule Spectre.Pulse.Phoenix do
   Then mount it on the existing Phoenix endpoint:
 
       socket "/pulse", MyAppWeb.PulseSocket,
-        websocket: [connect_info: [:peer_data, :auth_token]],
+        websocket: [connect_info: [:peer_data, :uri]],
         longpoll: false
 
   Phoenix exposes the WebSocket at `/pulse/websocket`. Authentication and

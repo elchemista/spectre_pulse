@@ -68,10 +68,30 @@ defmodule SpectrePulse.MixProject do
       source_ref: "v#{@version}",
       extras: [
         "README.md",
+        "docs/GETTING_STARTED.md",
+        "docs/PHOENIX.md",
+        "docs/STUDIO_MONITORING.md",
+        "docs/CONNECTIONS_AND_TRANSPORTS.md",
+        "docs/DELIVERY_AND_SECURITY.md",
         "docs/ARCHITECTURE.md",
         "docs/PUBLIC_API.md",
         "CHANGELOG.md",
         "LICENSE"
+      ],
+      groups_for_extras: [
+        "Start here": [
+          "README.md",
+          "docs/GETTING_STARTED.md",
+          "docs/PHOENIX.md"
+        ],
+        "Spectre Studio": ["docs/STUDIO_MONITORING.md"],
+        "Protocol and infrastructure": [
+          "docs/CONNECTIONS_AND_TRANSPORTS.md",
+          "docs/DELIVERY_AND_SECURITY.md",
+          "docs/ARCHITECTURE.md",
+          "docs/PUBLIC_API.md"
+        ],
+        Project: ["CHANGELOG.md", "LICENSE"]
       ],
       groups_for_modules: [
         Protocol: [
