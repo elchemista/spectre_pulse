@@ -619,8 +619,9 @@ defmodule Spectre.Pulse.TransportAdaptersErrorsTest do
     route = Route.web_socket(envelope.to, self(), id: "websocket-probe")
     assert {:ok, %Reachability{status: :reachable}} = WebSocket.probe(route, [])
 
-    dead = spawn(fn -> :ok end)
+    dead = spawn(fn -> receive do: (:stop -> :ok) end)
     monitor = Process.monitor(dead)
+    send(dead, :stop)
     assert_receive {:DOWN, ^monitor, :process, ^dead, :normal}
 
     assert {:ok, %Reachability{status: :unreachable}} =

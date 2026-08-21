@@ -58,7 +58,7 @@ defmodule SpectrePulse.MixProject do
         {:spectre, path: Path.expand(path, __DIR__), override: true}
 
       _unset ->
-        {:spectre, "~> 0.3.0", override: true}
+        {:spectre, "~> 0.3.2", override: true}
     end
   end
 
@@ -85,6 +85,13 @@ defmodule SpectrePulse.MixProject do
         "Contacts and routing": [
           Spectre.Pulse.Contact,
           Spectre.Pulse.ContactBook,
+          Spectre.Pulse.Connection,
+          Spectre.Pulse.ConnectionSpec,
+          Spectre.Pulse.AgentDescriptor,
+          Spectre.Pulse.Principal,
+          Spectre.Pulse.RuntimeInfo,
+          Spectre.Pulse.Monitoring,
+          Spectre.Pulse.Handshake,
           Spectre.Pulse.Directory,
           Spectre.Pulse.Discovery,
           Spectre.Pulse.Fabric,
@@ -101,6 +108,7 @@ defmodule SpectrePulse.MixProject do
           Spectre.Pulse.Executor,
           Spectre.Pulse.Expectation,
           Spectre.Pulse.Runtime,
+          Spectre.Pulse.Phoenix,
           Spectre.Pulse.Stack
         ],
         Transports: [

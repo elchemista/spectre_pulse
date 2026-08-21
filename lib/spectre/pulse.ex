@@ -11,6 +11,8 @@ defmodule Spectre.Pulse do
   alias Spectre.Agent
   alias Spectre.Context
   alias Spectre.Pulse.Config
+  alias Spectre.Pulse.ConnectionRegistry
+  alias Spectre.Pulse.ConnectionSpec
   alias Spectre.Pulse.ContactBook
   alias Spectre.Pulse.Directory
   alias Spectre.Pulse.Discovery
@@ -19,10 +21,12 @@ defmodule Spectre.Pulse do
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Executor
   alias Spectre.Pulse.Inbound
+  alias Spectre.Pulse.Monitoring
   alias Spectre.Pulse.Network
   alias Spectre.Pulse.Options
   alias Spectre.Pulse.Protocol
   alias Spectre.Pulse.Runtime
+  alias Spectre.Pulse.RuntimeInfo
   alias Spectre.Pulse.Stack, as: StackAdapter
   alias Spectre.Pulse.State, as: PulseState
   alias Spectre.State
@@ -40,10 +44,10 @@ defmodule Spectre.Pulse do
   @doc """
   Starts the host Pulse runtime.
 
-  Add `{Spectre.Pulse, transports: [...]}` to the host application's
+  Add `{Spectre.Pulse, transports: [...], connections: [...]}` to the host application's
   supervision tree. Modules using `Spectre.Pulse` are discovered and
-  subscribed automatically; `transports` contains only application-defined
-  transport drivers.
+  subscribed automatically. A connection exposes every discovered Agent by
+  default, or only the Agents selected by its `:agents` option.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []), do: Runtime.start_link(opts)
@@ -166,6 +170,69 @@ defmodule Spectre.Pulse do
   @doc "Removes an ephemeral connected route from the Pulse Fabric."
   @spec disconnect(term()) :: :ok | {:error, Spectre.Pulse.Error.t()}
   defdelegate disconnect(route_id), to: Spectre.Pulse.Fabric
+
+  @doc "Returns the configured connection specifications without secrets or callbacks."
+  @spec connection_specs() :: [map()]
+  def connection_specs do
+    ConnectionRegistry.specs()
+    |> Enum.map(&ConnectionSpec.to_public_map/1)
+  end
+
+  @doc "Returns the local Agents discovered by the active Pulse runtime."
+  @spec local_agents() :: [Spectre.Pulse.AgentDescriptor.t()]
+  defdelegate local_agents(), to: ConnectionRegistry
+
+  @doc "Returns local Agents exposed by one configured connection."
+  @spec exposed_agents(term()) ::
+          {:ok, [Spectre.Pulse.AgentDescriptor.t()]} | :error
+  defdelegate exposed_agents(connection_spec_id), to: ConnectionRegistry
+
+  @doc "Registers one authenticated physical connection with Pulse."
+  @spec open_connection(term(), map() | keyword()) ::
+          {:ok, Spectre.Pulse.Connection.t()} | {:error, Error.t()}
+  defdelegate open_connection(connection_spec_id, attrs),
+    to: ConnectionRegistry,
+    as: :open
+
+  @doc "Returns authenticated physical connections currently known to Pulse."
+  @spec connections() :: [Spectre.Pulse.Connection.t()]
+  defdelegate connections(), to: ConnectionRegistry
+
+  @doc "Returns one authenticated physical connection."
+  @spec connection(term()) :: {:ok, Spectre.Pulse.Connection.t()} | :error
+  defdelegate connection(id), to: ConnectionRegistry, as: :fetch
+
+  @doc "Updates the observation timestamp of an authenticated connection."
+  @spec touch_connection(term(), DateTime.t()) ::
+          {:ok, Spectre.Pulse.Connection.t()} | :error | {:error, Error.t()}
+  defdelegate touch_connection(id, observed_at \\ DateTime.utc_now()),
+    to: ConnectionRegistry,
+    as: :touch
+
+  @doc "Forgets a physical connection without terminating its transport process."
+  @spec close_connection(term()) :: :ok
+  defdelegate close_connection(id), to: ConnectionRegistry, as: :close
+
+  @doc "Returns remote Agents advertised by authenticated live connections."
+  @spec remote_agents() :: [Spectre.Pulse.AgentDescriptor.t()]
+  defdelegate remote_agents(), to: ConnectionRegistry
+
+  @doc """
+  Returns a current, bounded OTP process snapshot for one Agent Instance.
+
+  Trusted host code may call this directly. Transport integrations serving a
+  remote Studio must pass `connection: connection_id`; Pulse then requires the
+  `agent.runtime.read` grant and verifies that the Agent is exposed on that
+  connection.
+  """
+  @spec runtime_info(module() | Spectre.AgentRef.t() | String.t(), term(), keyword()) ::
+          {:ok, map()} | {:error, Error.t()}
+  def runtime_info(agent, subject, opts \\ []), do: RuntimeInfo.fetch(agent, subject, opts)
+
+  @doc "Returns active near-realtime runtime subscriptions known to Pulse."
+  @spec monitoring_subscriptions(term() | :all) :: [map()]
+  def monitoring_subscriptions(connection_id \\ :all),
+    do: Monitoring.subscriptions(connection_id)
 
   @doc """
   Executes a pending Pulse effect through the canonical Spectre boundary.

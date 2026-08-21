@@ -83,7 +83,7 @@ Install Spectre from Hex and Pulse from its GitHub release tag:
 ```elixir
 def deps do
   [
-    {:spectre, "~> 0.3.0"},
+    {:spectre, "~> 0.3.2"},
     {:spectre_pulse, github: "elchemista/spectre_pulse", branch: "main"}
   ]
 end
@@ -190,13 +190,18 @@ end
 ```
 
 Start one Pulse runtime in the host application's supervision tree. Do not add
-an `agents: [...]` option: Pulse finds both compiled modules and subscribes
-their identities itself.
+an application-wide `agents: [...]` option: Pulse finds both compiled modules
+and subscribes their identities itself. Agent filters belong to individual
+connection definitions.
 
 ```elixir
 def start(_type, _args) do
   children = [
-    {Spectre.Pulse, transports: []}
+    {Spectre.Pulse,
+     connections: [
+       # One WebSocket connection definition exposes every discovered Agent.
+       [id: :default_websocket, transport: :websocket, mode: :listen]
+     ]}
   ]
 
   Supervisor.start_link(children,
@@ -336,6 +341,16 @@ def start(_type, _args) do
     {Spectre.Pulse,
      transports: [
        {:grpc, MyApp.GRPCPulse, priority: 35}
+     ],
+     connections: [
+       [id: :studio, transport: :websocket, mode: :listen],
+       [
+         id: :private_agents,
+         transport: :grpc,
+         mode: :both,
+         agents: [MyApp.Anna, "spectre://acme/tao"],
+         scopes: ["agent.message"]
+       ]
      ]}
   ]
 
@@ -349,6 +364,77 @@ registers it in the shared Fabric. Driver options are `priority`, `metadata`,
 and the explicit `replace` flag. Local, WebSocket, BEAM node, PubSub, and REST
 are already registered, so `{Spectre.Pulse, []}` is sufficient when no custom
 binding is needed.
+
+`connections` describes physical listeners or outbound connection classes.
+Each definition exposes every discovered Agent by default. Its `agents`
+allow-list may contain Agent modules or canonical addresses. Definitions may
+overlap, so one connection can carry many Agents and the same Agent can be
+available through several connections or transports.
+
+When an application-owned socket has authenticated a peer, it registers the
+live link once. Pulse retains only the resulting principal and grants, never
+the credential used during the handshake:
+
+```elixir
+{:ok, connection} =
+  Spectre.Pulse.open_connection(:studio,
+    owner: socket_pid,
+    transport_pid: socket_pid,
+    principal: %{
+      id: "studio-operator-42",
+      kind: :studio,
+      scopes: ["studio.observe"]
+    },
+    granted_scopes: ["studio.observe"],
+    remote_agents: []
+  )
+```
+
+`Spectre.Pulse.connection_specs/0`, `connections/0`, `local_agents/0`,
+`remote_agents/0`, and `exposed_agents/1` provide the technical catalog needed
+by Studio or another control plane. Capabilities remain discovery claims;
+granted scopes are the authorization decision.
+
+### Phoenix WebSocket
+
+Pulse adds no Phoenix dependency. In a Phoenix application, generate a tiny
+socket module and mount it on the application's existing Endpoint:
+
+```elixir
+defmodule MyAppWeb.PulseSocket do
+  use Spectre.Pulse.Phoenix, connection: :studio
+end
+
+# MyAppWeb.Endpoint
+socket "/pulse", MyAppWeb.PulseSocket,
+  websocket: [connect_info: [:peer_data, :auth_token]],
+  longpoll: false
+```
+
+Phoenix serves it at `/pulse/websocket` using its configured HTTP server
+(including Bandit). The `:studio` connection definition supplies the
+authentication and authorization callbacks:
+
+```elixir
+connections: [
+  [
+    id: :studio,
+    transport: :websocket,
+    mode: :listen,
+    authenticate: &MyApp.PulseAccess.authenticate/2,
+    authorize: &MyApp.PulseAccess.authorize/2,
+    scopes: ["studio.observe", "studio.control"]
+  ]
+]
+```
+
+`authenticate/2` receives Phoenix's transport information as the opaque
+credential plus a reduced technical context and returns `{:ok, principal}`.
+`authorize/2` receives that principal and a credential-free request, then
+returns `:ok` or `{:ok, granted_scopes: [...], granted_profiles: [...]}`.
+Pulse sends a credential-free connection/Agent manifest as the first socket
+message. Incoming envelopes are restricted to the Agents exposed by that
+connection definition.
 
 Pulse then discovers delivery paths in the same way a network stack resolves
 a logical destination:
@@ -764,6 +850,79 @@ accepted work.
 - The transport authenticates the connection.
 - Pulse validates the envelope and binds its declared sender to that identity.
 - Spectre or the host authorizes the requested capability and data access.
+
+### Agent OTP runtime inspection
+
+Pulse can resolve a live Spectre Instance and return a bounded, wire-safe OTP
+process snapshot without retaining metrics or reading GenServer state:
+
+```elixir
+{:ok, snapshot} =
+  Spectre.Pulse.runtime_info(MyApp.Agent, subject,
+    connection: studio_connection_id
+  )
+```
+
+Remote calls require the `agent.runtime.read` scope and the Agent must be
+exposed by that connection. Trusted host code may omit `:connection`. The
+snapshot includes memory, mailbox length, reductions, heap/stack sizes,
+status, current/initial calls, links, monitors and garbage-collection data.
+Use `:max_collection_entries` and `:max_depth` to lower the hard response
+limits when exposing this capability across a network boundary.
+Mailbox contents, process dictionaries and raw GenServer state are never
+returned by this capability.
+
+Studio may also request a temporary near-realtime stream at runtime. This is
+not a connection setting: the authenticated WebSocket client sends an enable
+call when a LiveView starts monitoring an Agent Instance, then sends disable
+when monitoring ends. The connection only declares the two permission scopes:
+
+```elixir
+[
+  id: :studio,
+  transport: :websocket,
+  scopes: ["agent.runtime.read", "agent.runtime.stream"]
+]
+```
+
+Enable one subscription:
+
+```json
+{
+  "pulse": "connection",
+  "version": 1,
+  "type": "agent.runtime.monitor.enable",
+  "request_id": "liveview-panel-42",
+  "agent_address": "spectre://acme/researcher",
+  "subject": "account-123",
+  "interval_ms": 1000,
+  "duration_ms": 60000,
+  "fields": ["memory", "message_queue_len", "reductions", "status"]
+}
+```
+
+Pulse replies immediately with
+`agent.runtime.monitor.enabled` and snapshot sequence `0`, then pushes
+`agent.runtime.monitor.update` frames on the same WebSocket. Studio closes the
+stream with the server-generated id:
+
+```json
+{
+  "pulse": "connection",
+  "version": 1,
+  "type": "agent.runtime.monitor.disable",
+  "subscription_id": "019..."
+}
+```
+
+An optional `duration_ms` produces `agent.runtime.monitor.expired`; otherwise
+the subscription remains active until disable or WebSocket disconnection.
+Pulse never overlaps samples for one subscription, removes every subscription
+when its transport owner exits, and applies internal frequency, count, and
+backpressure limits. `Spectre.Pulse.monitoring_subscriptions/1` exposes the
+safe active catalog to trusted host tooling. Other transports can drive the
+same `Spectre.Pulse.Monitoring` API and event maps without copying this
+lifecycle or authorization logic.
 
 Sender-declared metadata is exposed separately as
 `input.meta.pulse.declared_metadata`; it is never merged into the transport's

@@ -2,7 +2,7 @@
 
 This file is the normative public API manifest for Spectre Pulse `0.1.0`.
 Protocol v1 remains stable while the package and Stack contracts target
-Spectre `0.3.0`. Compatibility guarantees
+Spectre `0.3.2`. Compatibility guarantees
 apply only to the modules and callables listed below. Any module, function,
 macro, or callback not listed here is an implementation detail even when it is
 exported or visible in generated docs.
@@ -15,8 +15,10 @@ type, and struct contract.
 ## Manifest
 
 - `Spectre.Pulse`
-  - functions: `config/1`, `connect/3`, `connect/4`, `contacts/1`, `correlate/2`, `deliver/2`, `disconnect/1`, `envelope/1`, `execute/2`, `execute/3`, `execute_turn/1`, `execute_turn/2`, `find_contacts/2`, `forget_contact/2`, `protocol/0`, `reachability/2`, `reachability/3`, `receive/2`, `receive/3`, `register_transport/2`, `register_transport/3`, `remember_contact/2`, `resolve/2`, `start_link/1`, `subscribe/1`, `subscribe/2`
+  - functions: `close_connection/1`, `config/1`, `connect/3`, `connect/4`, `connection/1`, `connection_specs/0`, `connections/0`, `contacts/1`, `correlate/2`, `deliver/2`, `disconnect/1`, `envelope/1`, `execute/2`, `execute/3`, `execute_turn/1`, `execute_turn/2`, `exposed_agents/1`, `find_contacts/2`, `forget_contact/2`, `local_agents/0`, `monitoring_subscriptions/0`, `monitoring_subscriptions/1`, `open_connection/2`, `protocol/0`, `reachability/2`, `reachability/3`, `receive/2`, `receive/3`, `register_transport/2`, `register_transport/3`, `remember_contact/2`, `remote_agents/0`, `resolve/2`, `runtime_info/2`, `runtime_info/3`, `start_link/1`, `subscribe/1`, `subscribe/2`, `touch_connection/1`, `touch_connection/2`
   - macros: `__using__/0`, `__using__/1`
+- `Spectre.Pulse.AgentDescriptor`
+  - functions: `for_agent/1`, `new/1`, `to_wire/1`
 - `Spectre.Pulse.Address`
   - functions: `agent_id/1`, `equal?/2`, `for_agent/1`, `new/1`, `new/2`, `new!/1`, `new!/2`, `normalize/1`, `normalize/2`, `normalize!/1`, `normalize!/2`
 - `Spectre.Pulse.Codec`
@@ -26,6 +28,10 @@ type, and struct contract.
 - `Spectre.Pulse.Codec.JSON`
 - `Spectre.Pulse.Config`
   - functions: `fetch/1`, `new/1`, `new!/1`, `public_identity/1`
+- `Spectre.Pulse.Connection`
+  - functions: `new/2`, `remote_agent_addresses/1`, `to_public_map/1`
+- `Spectre.Pulse.ConnectionSpec`
+  - functions: `new/1`, `resolve_agents/2`, `to_public_map/1`
 - `Spectre.Pulse.Contact`
   - functions: `new/1`, `new/2`, `new/3`, `new!/2`, `new!/3`
 - `Spectre.Pulse.ContactBook`
@@ -55,6 +61,8 @@ type, and struct contract.
   - functions: `child_spec/1`, `connect/3`, `connect/4`, `disconnect/1`, `register_transport/2`, `register_transport/3`, `routes/1`, `transports/0`
 - `Spectre.Pulse.Identity`
   - functions: `new/1`, `new/2`, `new!/1`, `new!/2`, `to_public_map/1`
+- `Spectre.Pulse.Handshake`
+  - functions: `open/2`, `prepare/2`, `prepare/3`
 - `Spectre.Pulse.Inbound`
   - functions: `receive/2`, `receive/3`, `to_input/2`, `to_input/3`
 - `Spectre.Pulse.Inbound.Result`
@@ -63,14 +71,20 @@ type, and struct contract.
 - `Spectre.Pulse.Local`
   - functions: `lookup/1`, `resolve_target/1`, `resolve_target/2`, `routes/1`, `subscribe/1`, `subscribe/2`, `via/1`
 - `Spectre.Pulse.Local.Endpoint`
+- `Spectre.Pulse.Monitoring`
+  - functions: `disable/2`, `enable/2`, `scope/0`, `start_link/1`, `subscriptions/0`, `subscriptions/1`
 - `Spectre.Pulse.Network`
   - functions: `deliver/2`, `deliver/3`, `probe/2`, `probe/3`
   - callbacks: `deliver/2`, `probe/2`
 - `Spectre.Pulse.Network.Routed`
 - `Spectre.Pulse.Payload`
   - functions: `new/1`, `new/2`, `new!/1`, `new!/2`, `to_wire/1`
+- `Spectre.Pulse.Phoenix`
+  - macros: `__using__/1`
 - `Spectre.Pulse.Protocol`
   - functions: `acts/0`, `control_types/0`, `decode_act/1`, `default_limits/0`, `describe/0`, `encode_act/1`, `limits/0`, `limits/1`, `valid_act?/1`, `version/0`
+- `Spectre.Pulse.Principal`
+  - functions: `new/1`
 - `Spectre.Pulse.Reachability`
   - functions: `expired?/1`, `expired?/2`, `new/1`, `new/2`, `unknown/0`, `unknown/1`, `unknown/2`
 - `Spectre.Pulse.Receipt`
@@ -79,6 +93,8 @@ type, and struct contract.
   - functions: `local/2`, `local/3`, `new/1`, `new!/1`, `node/3`, `node/4`, `pub_sub/2`, `pub_sub/3`, `rest/2`, `rest/3`, `web_socket/2`, `web_socket/3`
 - `Spectre.Pulse.Runtime`
   - functions: `child_spec/1`
+- `Spectre.Pulse.RuntimeInfo`
+  - functions: `fetch/2`, `fetch/3`, `process_info/1`, `process_info/2`, `scope/0`
 - `Spectre.Pulse.Stack`
 - `Spectre.Pulse.State`
   - functions: `contact_book/1`, `contact_book/2`, `correlate/2`, `expectations/1`, `forget_contact/2`, `forget_expectation/2`, `put_expectation/2`, `remember_contact/2`
