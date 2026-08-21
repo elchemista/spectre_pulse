@@ -3,14 +3,17 @@ defmodule Spectre.Pulse.Runtime do
   Supervised host configuration for Pulse.
 
   A host application can add `{Spectre.Pulse, opts}` to its supervision tree.
-  This runtime registers application transport drivers and automatically
-  subscribes modules which use `Spectre.Pulse` against the shared Pulse
-  Fabric. One Runtime owns the automatic subscriptions on a BEAM node.
+  This runtime registers application transport drivers, discovers connection
+  configuration, and automatically subscribes modules which use
+  `Spectre.Pulse`. One Runtime owns the automatic subscriptions and connection
+  catalog on a BEAM node.
   """
 
   use GenServer
 
+  alias Spectre.Pulse.AgentDescriptor
   alias Spectre.Pulse.Config
+  alias Spectre.Pulse.ConnectionRegistry
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Fabric
   alias Spectre.Pulse.Local
@@ -22,11 +25,15 @@ defmodule Spectre.Pulse.Runtime do
           {atom(), module()}
           | {atom(), module(), keyword()}
 
-  @type option :: {:transports, [transport_config()]}
+  @type option ::
+          {:transports, [transport_config()]}
+          | {:connections, [Spectre.Pulse.ConnectionSpec.t() | map() | keyword()]}
   @typep normalized_transport :: {atom(), module(), keyword()}
   @typep subscription :: {module(), String.t()}
   @typep state :: %{
            agents: [module()],
+           connection_specs: [Spectre.Pulse.ConnectionSpec.t()],
+           local_agents: [AgentDescriptor.t()],
            transports: [normalized_transport()],
            owned_subscriptions: [String.t()]
          }
@@ -45,12 +52,23 @@ defmodule Spectre.Pulse.Runtime do
 
     with :ok <- validate_options(opts),
          {:ok, transports} <- normalize_transports(Keyword.get(opts, :transports, [])),
+         {:ok, connections} <- normalize_connections(Keyword.get(opts, :connections, [])),
          :ok <- register_transports(transports),
          {:ok, agents} <- discover_agents(),
-         {:ok, owned_subscriptions} <- subscribe_agents(agents) do
+         {:ok, local_agents} <- describe_agents(agents),
+         {:ok, owned_subscriptions} <- subscribe_agents(agents),
+         :ok <-
+           configure_connections_or_stop_subscriptions(
+             connections,
+             local_agents,
+             owned_subscriptions
+           ),
+         connection_specs <- ConnectionRegistry.specs() do
       {:ok,
        %{
          agents: agents,
+         connection_specs: connection_specs,
+         local_agents: local_agents,
          transports: transports,
          owned_subscriptions: owned_subscriptions
        }}
@@ -63,6 +81,7 @@ defmodule Spectre.Pulse.Runtime do
   @spec terminate(term(), state()) :: :ok
   @impl GenServer
   def terminate(_reason, state) do
+    ConnectionRegistry.clear_configuration(self())
     Enum.each(state.owned_subscriptions, &stop_owned_subscription/1)
     :ok
   end
@@ -70,7 +89,7 @@ defmodule Spectre.Pulse.Runtime do
   @spec validate_options(term()) :: :ok | {:error, Error.t()}
   defp validate_options(opts) when is_list(opts) do
     if Keyword.keyword?(opts) do
-      case Keyword.keys(opts) -- [:transports] do
+      case Keyword.keys(opts) -- [:transports, :connections] do
         [] -> :ok
         unknown -> {:error, Error.not_sent(:validation, {:unknown_runtime_options, unknown})}
       end
@@ -90,6 +109,13 @@ defmodule Spectre.Pulse.Runtime do
 
   defp normalize_transports(transports) do
     {:error, Error.not_sent(:validation, {:invalid_transport_registrations, transports})}
+  end
+
+  @spec normalize_connections(term()) :: {:ok, [term()]} | {:error, Error.t()}
+  defp normalize_connections(connections) when is_list(connections), do: {:ok, connections}
+
+  defp normalize_connections(connections) do
+    {:error, Error.not_sent(:validation, {:invalid_connection_specs, connections})}
   end
 
   @spec normalize_transport(term()) :: {:ok, normalized_transport()} | {:error, Error.t()}
@@ -168,6 +194,22 @@ defmodule Spectre.Pulse.Runtime do
 
       {:error, %Error{} = error} ->
         {:halt, {:error, error}}
+    end
+  end
+
+  @spec describe_agents([module()]) :: {:ok, [AgentDescriptor.t()]} | {:error, Error.t()}
+  defp describe_agents(agents), do: normalize_entries(agents, &AgentDescriptor.for_agent/1)
+
+  @spec configure_connections_or_stop_subscriptions([term()], [AgentDescriptor.t()], [String.t()]) ::
+          :ok | {:error, Error.t()}
+  defp configure_connections_or_stop_subscriptions(connections, local_agents, owned_subscriptions) do
+    case ConnectionRegistry.configure(self(), connections, local_agents) do
+      :ok ->
+        :ok
+
+      {:error, %Error{} = error} ->
+        Enum.each(owned_subscriptions, &stop_owned_subscription/1)
+        {:error, error}
     end
   end
 

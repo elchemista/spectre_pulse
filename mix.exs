@@ -85,6 +85,11 @@ defmodule SpectrePulse.MixProject do
         "Contacts and routing": [
           Spectre.Pulse.Contact,
           Spectre.Pulse.ContactBook,
+          Spectre.Pulse.Connection,
+          Spectre.Pulse.ConnectionSpec,
+          Spectre.Pulse.AgentDescriptor,
+          Spectre.Pulse.Principal,
+          Spectre.Pulse.Handshake,
           Spectre.Pulse.Directory,
           Spectre.Pulse.Discovery,
           Spectre.Pulse.Fabric,
@@ -101,6 +106,7 @@ defmodule SpectrePulse.MixProject do
           Spectre.Pulse.Executor,
           Spectre.Pulse.Expectation,
           Spectre.Pulse.Runtime,
+          Spectre.Pulse.Phoenix,
           Spectre.Pulse.Stack
         ],
         Transports: [

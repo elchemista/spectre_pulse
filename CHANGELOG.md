@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add multi-Agent connection definitions, authenticated live-connection
+  tracking, scoped Agent exposure, remote discovery descriptors, and public
+  Studio-oriented catalog APIs.
+- Add a credential-free handshake boundary and a zero-dependency Phoenix
+  WebSocket integration that reuses the host Endpoint and HTTP server.
+
 ## 0.3.0 — 2026-08-13
 
 - Align Pulse and the complete ecosystem conformance Stack with Spectre 0.3.0.

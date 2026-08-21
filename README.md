@@ -190,13 +190,18 @@ end
 ```
 
 Start one Pulse runtime in the host application's supervision tree. Do not add
-an `agents: [...]` option: Pulse finds both compiled modules and subscribes
-their identities itself.
+an application-wide `agents: [...]` option: Pulse finds both compiled modules
+and subscribes their identities itself. Agent filters belong to individual
+connection definitions.
 
 ```elixir
 def start(_type, _args) do
   children = [
-    {Spectre.Pulse, transports: []}
+    {Spectre.Pulse,
+     connections: [
+       # One WebSocket connection definition exposes every discovered Agent.
+       [id: :default_websocket, transport: :websocket, mode: :listen]
+     ]}
   ]
 
   Supervisor.start_link(children,
@@ -336,6 +341,16 @@ def start(_type, _args) do
     {Spectre.Pulse,
      transports: [
        {:grpc, MyApp.GRPCPulse, priority: 35}
+     ],
+     connections: [
+       [id: :studio, transport: :websocket, mode: :listen],
+       [
+         id: :private_agents,
+         transport: :grpc,
+         mode: :both,
+         agents: [MyApp.Anna, "spectre://acme/tao"],
+         scopes: ["agent.message"]
+       ]
      ]}
   ]
 
@@ -349,6 +364,77 @@ registers it in the shared Fabric. Driver options are `priority`, `metadata`,
 and the explicit `replace` flag. Local, WebSocket, BEAM node, PubSub, and REST
 are already registered, so `{Spectre.Pulse, []}` is sufficient when no custom
 binding is needed.
+
+`connections` describes physical listeners or outbound connection classes.
+Each definition exposes every discovered Agent by default. Its `agents`
+allow-list may contain Agent modules or canonical addresses. Definitions may
+overlap, so one connection can carry many Agents and the same Agent can be
+available through several connections or transports.
+
+When an application-owned socket has authenticated a peer, it registers the
+live link once. Pulse retains only the resulting principal and grants, never
+the credential used during the handshake:
+
+```elixir
+{:ok, connection} =
+  Spectre.Pulse.open_connection(:studio,
+    owner: socket_pid,
+    transport_pid: socket_pid,
+    principal: %{
+      id: "studio-operator-42",
+      kind: :studio,
+      scopes: ["studio.observe"]
+    },
+    granted_scopes: ["studio.observe"],
+    remote_agents: []
+  )
+```
+
+`Spectre.Pulse.connection_specs/0`, `connections/0`, `local_agents/0`,
+`remote_agents/0`, and `exposed_agents/1` provide the technical catalog needed
+by Studio or another control plane. Capabilities remain discovery claims;
+granted scopes are the authorization decision.
+
+### Phoenix WebSocket
+
+Pulse adds no Phoenix dependency. In a Phoenix application, generate a tiny
+socket module and mount it on the application's existing Endpoint:
+
+```elixir
+defmodule MyAppWeb.PulseSocket do
+  use Spectre.Pulse.Phoenix, connection: :studio
+end
+
+# MyAppWeb.Endpoint
+socket "/pulse", MyAppWeb.PulseSocket,
+  websocket: [connect_info: [:peer_data, :auth_token]],
+  longpoll: false
+```
+
+Phoenix serves it at `/pulse/websocket` using its configured HTTP server
+(including Bandit). The `:studio` connection definition supplies the
+authentication and authorization callbacks:
+
+```elixir
+connections: [
+  [
+    id: :studio,
+    transport: :websocket,
+    mode: :listen,
+    authenticate: &MyApp.PulseAccess.authenticate/2,
+    authorize: &MyApp.PulseAccess.authorize/2,
+    scopes: ["studio.observe", "studio.control"]
+  ]
+]
+```
+
+`authenticate/2` receives Phoenix's transport information as the opaque
+credential plus a reduced technical context and returns `{:ok, principal}`.
+`authorize/2` receives that principal and a credential-free request, then
+returns `:ok` or `{:ok, granted_scopes: [...], granted_profiles: [...]}`.
+Pulse sends a credential-free connection/Agent manifest as the first socket
+message. Incoming envelopes are restricted to the Agents exposed by that
+connection definition.
 
 Pulse then discovers delivery paths in the same way a network stack resolves
 a logical destination:

@@ -11,6 +11,7 @@ defmodule Spectre.Pulse.Application do
     children = [
       {Registry, keys: :unique, name: Spectre.Pulse.Local.Registry},
       {DynamicSupervisor, strategy: :one_for_one, name: Spectre.Pulse.Local.Supervisor},
+      Spectre.Pulse.ConnectionRegistry,
       Spectre.Pulse.Fabric
     ]
 
