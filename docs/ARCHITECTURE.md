@@ -22,7 +22,7 @@ This document describes ownership and internal layers. Use the
 | Connection principal, grants, and exposed Agents | Pulse connection boundary |
 | Physical route discovery and ordering | Pulse Discovery, Fabric, and Network |
 | HTTP, WebSocket, PubSub, BEAM, custom delivery | Transport binding |
-| Temporary OTP runtime subscriptions | Pulse Monitoring |
+| Temporary OTP and Work/Vigil subscriptions | Pulse Monitoring |
 | Authentication credential validation | Host transport callback |
 
 Pulse has no Room, shared Task, Coordinator, Workflow, Store, Journal, semantic
@@ -73,7 +73,9 @@ The Phoenix adapter adds a connection-control lane beside Agent envelopes:
 ```text
 Phoenix socket
   ├── Agent envelope → WebSocket binding → Pulse inbound bridge
-  └── control frame  → Monitoring session → runtime snapshots
+  └── control frame  → Monitoring session
+                         ├── OTP runtime snapshots
+                         └── Spectre Work/Vigil views
 ```
 
 The two lanes share the authenticated connection and exposed-Agent boundary but
@@ -188,14 +190,17 @@ Monitoring is dynamic connection state, not static Agent configuration:
 
 1. an authenticated adapter starts one monitoring session for its connection;
 2. Studio enables a subscription for an exposed Agent and Subject;
-3. Pulse verifies `agent.runtime.stream` and performs a scoped runtime read;
+3. Pulse verifies the matching runtime or operations stream scope and performs
+   the corresponding scoped read;
 4. the session serially samples and pushes bounded events;
 5. disable, expiry, or adapter death removes the subscription;
 6. a central safe catalog records who is monitoring what.
 
-Monitoring never reads raw Agent state. It samples a fixed safe vocabulary from
-the OTP process. Domain observability such as Ledger tokens remains owned by the
-corresponding Spectre extension.
+Monitoring never reads raw Agent state. OTP monitoring samples a fixed safe
+`Process.info/2` vocabulary. Operations monitoring reads only Spectre's
+privacy-safe `Operation.View` projections for Work and Vigil. Domain
+observability such as Ledger tokens remains owned by the corresponding Spectre
+extension.
 
 ## Failure model
 

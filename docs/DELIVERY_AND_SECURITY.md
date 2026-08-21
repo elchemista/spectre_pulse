@@ -234,7 +234,13 @@ by the connection. Realtime streams additionally require
 
 Runtime inspection returns bounded, wire-safe `Process.info/2` fields. It never
 returns mailbox contents, process dictionaries, or raw GenServer state. See
-[Studio monitoring](STUDIO_MONITORING.md) for the complete boundary.
+[OTP runtime monitoring](STUDIO_MONITORING.md) for the complete boundary.
+
+Remote Work and Vigil views independently require `agent.operations.read` and
+an exposed Agent. Realtime streams additionally require
+`agent.operations.stream`. Pulse serializes only Spectre's privacy-safe
+`Operation.View`; it never reads canonical loop or Instance state. See
+[Work and Vigil monitoring](STUDIO_OPERATIONS.md).
 
 ## Reachability is an observation
 
@@ -259,9 +265,9 @@ The minimal protocol control payload types are ordinary Agent envelopes:
 They create no global presence truth or heartbeat process. A pong proves only
 that an endpoint answered one observation.
 
-Connection-control frames such as `agent.runtime.monitor.enable` are a separate
-technical surface tied to an authenticated connection; they are not Agent
-payload envelopes.
+Connection-control frames such as `agent.runtime.monitor.enable` and
+`agent.operations.monitor.enable` are a separate technical surface tied to an
+authenticated connection; they are not Agent payload envelopes.
 
 ## Common failures
 

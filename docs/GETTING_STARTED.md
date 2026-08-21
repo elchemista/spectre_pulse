@@ -264,6 +264,8 @@ end
 ## Next steps
 
 - Connect Studio or another system through [Phoenix WebSocket](PHOENIX.md).
-- Control Agent runtime observation through [Studio monitoring](STUDIO_MONITORING.md).
+- Observe OTP process health through [runtime monitoring](STUDIO_MONITORING.md).
+- Observe active Work and Vigil loops through
+  [operations monitoring](STUDIO_OPERATIONS.md).
 - Add remote routes through [connections and transports](CONNECTIONS_AND_TRANSPORTS.md).
 - Review [delivery and security](DELIVERY_AND_SECURITY.md) before production exposure.

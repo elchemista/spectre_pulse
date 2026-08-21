@@ -195,7 +195,13 @@ defmodule Spectre.Pulse.Phoenix.Socket do
     end
   end
 
-  @spec handle_command({:monitor_enable, map()} | {:monitor_disable, term()}, t()) ::
+  @spec handle_command(
+          {:monitor_enable, map()}
+          | {:monitor_disable, term()}
+          | {:operations_monitor_enable, map()}
+          | {:operations_monitor_disable, term()},
+          t()
+        ) ::
           {:reply, :ok | :error, {:text, binary()}, t()}
   defp handle_command({:monitor_enable, attrs}, state) do
     monitoring_reply(Monitoring.enable(state.monitoring, attrs), state)
@@ -203,6 +209,14 @@ defmodule Spectre.Pulse.Phoenix.Socket do
 
   defp handle_command({:monitor_disable, subscription_id}, state) do
     monitoring_reply(Monitoring.disable(state.monitoring, subscription_id), state)
+  end
+
+  defp handle_command({:operations_monitor_enable, attrs}, state) do
+    monitoring_reply(Monitoring.enable_operations(state.monitoring, attrs), state)
+  end
+
+  defp handle_command({:operations_monitor_disable, subscription_id}, state) do
+    monitoring_reply(Monitoring.disable_operations(state.monitoring, subscription_id), state)
   end
 
   @spec monitoring_reply({:ok, map()} | {:error, Error.t()}, t()) ::
