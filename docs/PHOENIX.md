@@ -87,7 +87,9 @@ def start(_type, _args) do
          authorize: &MyApp.PulseAccess.authorize/2,
          scopes: [
            "agent.runtime.read",
-           "agent.runtime.stream"
+           "agent.runtime.stream",
+           "agent.operations.read",
+           "agent.operations.stream"
          ],
          profiles: ["pulse.messaging/1", "spectre.studio/1"]
        ]
@@ -125,7 +127,9 @@ defmodule MyApp.PulseAccess do
 
   @allowed_scopes [
     "agent.runtime.read",
-    "agent.runtime.stream"
+    "agent.runtime.stream",
+    "agent.operations.read",
+    "agent.operations.stream"
   ]
 
   @spec authenticate(map(), map()) ::
@@ -193,7 +197,9 @@ The first server frame is a connection manifest:
     "transport": "websocket",
     "granted_scopes": [
       "agent.runtime.read",
-      "agent.runtime.stream"
+      "agent.runtime.stream",
+      "agent.operations.read",
+      "agent.operations.stream"
     ]
   },
   "spec": {
@@ -255,12 +261,16 @@ envelope correlated with `relates_to`.
 ## Studio control calls
 
 Connection control calls use the same socket but are not Agent envelopes. The
-current control surface includes runtime monitoring:
+current control surface includes OTP runtime and Work/Vigil monitoring:
 
 - `agent.runtime.monitor.enable`;
-- `agent.runtime.monitor.disable`.
+- `agent.runtime.monitor.disable`;
+- `agent.operations.monitor.enable`;
+- `agent.operations.monitor.disable`.
 
-See [Studio monitoring](STUDIO_MONITORING.md) for their schemas and lifecycle.
+See [OTP runtime monitoring](STUDIO_MONITORING.md) and
+[Work and Vigil monitoring](STUDIO_OPERATIONS.md) for their schemas and
+lifecycle.
 
 ## WSS and TLS
 
@@ -302,6 +312,7 @@ Spectre.Pulse.connections()
 Spectre.Pulse.local_agents()
 Spectre.Pulse.exposed_agents(:studio)
 Spectre.Pulse.monitoring_subscriptions(connection_id)
+Spectre.Pulse.operation_monitoring_subscriptions(connection_id)
 ```
 
 ## Multiple connection classes
@@ -315,7 +326,12 @@ connections: [
     id: :studio_observer,
     transport: :websocket,
     agents: :all,
-    scopes: ["agent.runtime.read", "agent.runtime.stream"]
+    scopes: [
+      "agent.runtime.read",
+      "agent.runtime.stream",
+      "agent.operations.read",
+      "agent.operations.stream"
+    ]
   ],
   [
     id: :agent_mesh,

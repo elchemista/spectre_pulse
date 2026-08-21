@@ -9,6 +9,8 @@
   WebSocket integration that reuses the host Endpoint and HTTP server.
 - Add scoped, bounded OTP runtime inspection for live Agent Instances without
   exposing mailbox contents, process dictionaries, or GenServer state.
+- Add scoped, bounded Work and Vigil snapshots plus runtime-controlled
+  near-realtime Studio subscriptions backed by Spectre 0.3.2 operation views.
 - Target Spectre 0.3.2, harden Phoenix error frames against internal-data
   disclosure, and validate the integration with a real Phoenix application.
 

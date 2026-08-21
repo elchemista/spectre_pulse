@@ -10,9 +10,9 @@ defmodule Spectre.Pulse.RuntimeInfo do
   """
 
   alias Spectre.Pulse.Error
+  alias Spectre.Pulse.InstanceTarget
   alias Spectre.Pulse.RuntimeInfo.Request
   alias Spectre.Pulse.RuntimeInfo.Snapshot
-  alias Spectre.Pulse.RuntimeInfo.Target
 
   @scope "agent.runtime.read"
 
@@ -33,7 +33,15 @@ defmodule Spectre.Pulse.RuntimeInfo do
   @spec fetch(target(), term(), keyword()) :: {:ok, map()} | {:error, Error.t()}
   def fetch(target, subject, opts \\ []) do
     with {:ok, request} <- Request.new(opts),
-         {:ok, resolved} <- Target.resolve(target, subject, request, @scope),
+         {:ok, resolved} <-
+           InstanceTarget.resolve(
+             target,
+             subject,
+             request.connection,
+             request.instance_registry,
+             @scope,
+             :runtime_info
+           ),
          {:ok, snapshot} <- Snapshot.capture(resolved.pid, request) do
       {:ok, response(resolved, snapshot)}
     end
@@ -55,7 +63,7 @@ defmodule Spectre.Pulse.RuntimeInfo do
     end
   end
 
-  @spec response(Target.t(), Snapshot.t()) :: map()
+  @spec response(InstanceTarget.t(), Snapshot.t()) :: map()
   defp response(target, snapshot) do
     %{
       "schema_version" => 1,

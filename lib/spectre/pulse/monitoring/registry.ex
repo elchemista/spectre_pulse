@@ -31,8 +31,9 @@ defmodule Spectre.Pulse.Monitoring.Registry do
   def unregister_session(session), do: GenServer.call(__MODULE__, {:unregister_session, session})
 
   @doc false
-  @spec list(term() | :all) :: [map()]
-  def list(connection_id \\ :all), do: GenServer.call(__MODULE__, {:list, connection_id})
+  @spec list(term() | :all, Subscription.kind() | :all) :: [map()]
+  def list(connection_id \\ :all, kind \\ :all),
+    do: GenServer.call(__MODULE__, {:list, connection_id, kind})
 
   @doc false
   @impl GenServer
@@ -62,11 +63,12 @@ defmodule Spectre.Pulse.Monitoring.Registry do
     {:reply, :ok, remove_session(state, session)}
   end
 
-  def handle_call({:list, connection_id}, _from, state) do
+  def handle_call({:list, connection_id, kind}, _from, state) do
     subscriptions =
       state.subscriptions
       |> Map.values()
       |> filter_connection(connection_id)
+      |> filter_kind(kind)
       |> Enum.sort_by(& &1.created_at_unix_ms)
       |> Enum.map(&Subscription.to_public_map/1)
 
@@ -132,4 +134,10 @@ defmodule Spectre.Pulse.Monitoring.Registry do
 
   defp filter_connection(subscriptions, connection_id),
     do: Enum.filter(subscriptions, &(&1.connection_id == connection_id))
+
+  @spec filter_kind([Subscription.t()], Subscription.kind() | :all) :: [Subscription.t()]
+  defp filter_kind(subscriptions, :all), do: subscriptions
+
+  defp filter_kind(subscriptions, kind) when kind in [:runtime, :operations],
+    do: Enum.filter(subscriptions, &(&1.kind == kind))
 end

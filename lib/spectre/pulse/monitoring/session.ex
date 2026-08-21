@@ -10,6 +10,7 @@ defmodule Spectre.Pulse.Monitoring.Session do
   alias Spectre.Pulse.Monitoring.Entry
   alias Spectre.Pulse.Monitoring.Registry, as: MonitoringRegistry
   alias Spectre.Pulse.Monitoring.Subscription
+  alias Spectre.Pulse.Operations
   alias Spectre.Pulse.RuntimeInfo
 
   @maximum_subscriptions 16
@@ -32,12 +33,22 @@ defmodule Spectre.Pulse.Monitoring.Session do
 
   @doc false
   @spec enable(pid(), map()) :: {:ok, map()} | {:error, Error.t()}
-  def enable(session, attrs), do: GenServer.call(session, {:enable, attrs})
+  def enable(session, attrs), do: GenServer.call(session, {:enable, :runtime, attrs})
+
+  @doc false
+  @spec enable_operations(pid(), map()) :: {:ok, map()} | {:error, Error.t()}
+  def enable_operations(session, attrs),
+    do: GenServer.call(session, {:enable, :operations, attrs})
 
   @doc false
   @spec disable(pid(), term()) :: {:ok, map()} | {:error, Error.t()}
   def disable(session, subscription_id),
-    do: GenServer.call(session, {:disable, subscription_id})
+    do: GenServer.call(session, {:disable, :runtime, subscription_id})
+
+  @doc false
+  @spec disable_operations(pid(), term()) :: {:ok, map()} | {:error, Error.t()}
+  def disable_operations(session, subscription_id),
+    do: GenServer.call(session, {:disable, :operations, subscription_id})
 
   @doc false
   @impl GenServer
@@ -65,32 +76,33 @@ defmodule Spectre.Pulse.Monitoring.Session do
 
   @doc false
   @impl GenServer
-  def handle_call({:enable, attrs}, _from, state) do
-    with :ok <- ensure_capacity(state),
-         :ok <- authorize_stream(state.connection_id),
+  def handle_call({:enable, kind, attrs}, _from, state) when kind in [:runtime, :operations] do
+    with :ok <- ensure_capacity(state, kind),
+         :ok <- authorize_stream(state.connection_id, kind),
          {:ok, subscription} <-
-           Subscription.new(state.connection_id, attrs, state.trusted_options),
+           Subscription.new(kind, state.connection_id, attrs, state.trusted_options),
          {:ok, snapshot} <- sample(subscription) do
       entry = schedule(subscription)
       :ok = MonitoringRegistry.register(self(), subscription)
 
-      response = event("agent.runtime.monitor.enabled", subscription, 0, snapshot, 0)
+      response = event(event_type(subscription, "enabled"), subscription, 0, snapshot, 0)
       {:reply, {:ok, response}, put_in(state.subscriptions[subscription.id], entry)}
     else
       {:error, %Error{} = error} -> {:reply, {:error, error}, state}
     end
   end
 
-  def handle_call({:disable, subscription_id}, _from, state) do
-    case pop_subscription(state, subscription_id) do
+  def handle_call({:disable, kind, subscription_id}, _from, state)
+      when kind in [:runtime, :operations] do
+    case pop_subscription(state, subscription_id, kind) do
       {:ok, entry, next} ->
         cancel_timers(entry)
         :ok = MonitoringRegistry.unregister(self(), entry.subscription.id)
-        response = event("agent.runtime.monitor.disabled", entry.subscription)
+        response = event(event_type(entry.subscription, "disabled"), entry.subscription)
         {:reply, {:ok, response}, next}
 
       :error ->
-        error = Error.not_sent(:routing, :unknown_runtime_monitor_subscription)
+        error = Error.not_sent(:routing, unknown_subscription_reason(kind))
         {:reply, {:error, error}, state}
     end
   end
@@ -109,7 +121,12 @@ defmodule Spectre.Pulse.Monitoring.Session do
       {:ok, entry, next} ->
         cancel_timers(entry)
         :ok = MonitoringRegistry.unregister(self(), entry.subscription.id)
-        notify(state.sink, event("agent.runtime.monitor.expired", entry.subscription))
+
+        notify(
+          state.sink,
+          event(event_type(entry.subscription, "expired"), entry.subscription)
+        )
+
         {:noreply, next}
 
       :error ->
@@ -135,22 +152,22 @@ defmodule Spectre.Pulse.Monitoring.Session do
     :ok
   end
 
-  @spec ensure_capacity(t()) :: :ok | {:error, Error.t()}
-  defp ensure_capacity(state) do
+  @spec ensure_capacity(t(), Subscription.kind()) :: :ok | {:error, Error.t()}
+  defp ensure_capacity(state, kind) do
     if map_size(state.subscriptions) < @maximum_subscriptions,
       do: :ok,
-      else: {:error, Error.not_sent(:authorization, :runtime_monitor_limit_reached)}
+      else: {:error, Error.not_sent(:authorization, limit_reason(kind))}
   end
 
-  @spec authorize_stream(term()) :: :ok | {:error, Error.t()}
-  defp authorize_stream(connection_id) do
+  @spec authorize_stream(term(), Subscription.kind()) :: :ok | {:error, Error.t()}
+  defp authorize_stream(connection_id, kind) do
+    scope = stream_scope(kind)
+
     case ConnectionRegistry.fetch(connection_id) do
       {:ok, %Connection{granted_scopes: scopes}} ->
-        if Monitoring.scope() in scopes,
+        if scope in scopes,
           do: :ok,
-          else:
-            {:error,
-             Error.not_sent(:authorization, {:connection_scope_required, Monitoring.scope()})}
+          else: {:error, Error.not_sent(:authorization, {:connection_scope_required, scope})}
 
       :error ->
         {:error, Error.not_sent(:routing, :unknown_connection)}
@@ -158,11 +175,19 @@ defmodule Spectre.Pulse.Monitoring.Session do
   end
 
   @spec sample(Subscription.t()) :: {:ok, map()} | {:error, Error.t()}
-  defp sample(subscription) do
+  defp sample(%Subscription{kind: :runtime} = subscription) do
     RuntimeInfo.fetch(
       subscription.agent_address,
       subscription.subject,
-      subscription.runtime_options
+      subscription.sample_options
+    )
+  end
+
+  defp sample(%Subscription{kind: :operations} = subscription) do
+    Operations.list(
+      subscription.agent_address,
+      subscription.subject,
+      subscription.sample_options
     )
   end
 
@@ -199,7 +224,7 @@ defmodule Spectre.Pulse.Monitoring.Session do
       case sample(entry.subscription) do
         {:ok, snapshot} ->
           event(
-            "agent.runtime.monitor.update",
+            event_type(entry.subscription, "update"),
             entry.subscription,
             sequence,
             snapshot,
@@ -233,11 +258,27 @@ defmodule Spectre.Pulse.Monitoring.Session do
     end
   end
 
+  @spec pop_subscription(t(), term(), Subscription.kind()) :: {:ok, Entry.t(), t()} | :error
+  defp pop_subscription(state, subscription_id, kind) when is_binary(subscription_id) do
+    case Map.pop(state.subscriptions, subscription_id) do
+      {nil, _subscriptions} ->
+        :error
+
+      {%Entry{subscription: %Subscription{kind: ^kind}} = entry, subscriptions} ->
+        {:ok, entry, %{state | subscriptions: subscriptions}}
+
+      {%Entry{}, _subscriptions} ->
+        :error
+    end
+  end
+
+  defp pop_subscription(_state, _subscription_id, _kind), do: :error
+
   @spec pop_subscription(t(), term()) :: {:ok, Entry.t(), t()} | :error
   defp pop_subscription(state, subscription_id) when is_binary(subscription_id) do
     case Map.pop(state.subscriptions, subscription_id) do
       {nil, _subscriptions} -> :error
-      {entry, subscriptions} -> {:ok, entry, %{state | subscriptions: subscriptions}}
+      {%Entry{} = entry, subscriptions} -> {:ok, entry, %{state | subscriptions: subscriptions}}
     end
   end
 
@@ -276,7 +317,7 @@ defmodule Spectre.Pulse.Monitoring.Session do
 
   @spec error_event(Subscription.t(), non_neg_integer(), Error.t()) :: map()
   defp error_event(subscription, sequence, error) do
-    "agent.runtime.monitor.error"
+    event_type(subscription, "error")
     |> event(subscription)
     |> Map.merge(%{
       "sequence" => sequence,
@@ -290,5 +331,21 @@ defmodule Spectre.Pulse.Monitoring.Session do
   @spec reason_code(term()) :: String.t()
   defp reason_code(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp reason_code(reason) when is_tuple(reason), do: reason |> elem(0) |> reason_code()
-  defp reason_code(_reason), do: "runtime_monitor_sample_failed"
+  defp reason_code(_reason), do: "monitor_sample_failed"
+
+  @spec stream_scope(Subscription.kind()) :: String.t()
+  defp stream_scope(:runtime), do: Monitoring.scope()
+  defp stream_scope(:operations), do: Monitoring.operations_scope()
+
+  @spec event_type(Subscription.t(), String.t()) :: String.t()
+  defp event_type(%Subscription{kind: kind}, suffix),
+    do: "agent.#{kind}.monitor.#{suffix}"
+
+  @spec unknown_subscription_reason(Subscription.kind()) :: atom()
+  defp unknown_subscription_reason(:runtime), do: :unknown_runtime_monitor_subscription
+  defp unknown_subscription_reason(:operations), do: :unknown_operations_monitor_subscription
+
+  @spec limit_reason(Subscription.kind()) :: atom()
+  defp limit_reason(:runtime), do: :runtime_monitor_limit_reached
+  defp limit_reason(:operations), do: :operations_monitor_limit_reached
 end

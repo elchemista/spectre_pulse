@@ -71,6 +71,7 @@ defmodule SpectrePulse.MixProject do
         "docs/GETTING_STARTED.md",
         "docs/PHOENIX.md",
         "docs/STUDIO_MONITORING.md",
+        "docs/STUDIO_OPERATIONS.md",
         "docs/CONNECTIONS_AND_TRANSPORTS.md",
         "docs/DELIVERY_AND_SECURITY.md",
         "docs/ARCHITECTURE.md",
@@ -84,7 +85,10 @@ defmodule SpectrePulse.MixProject do
           "docs/GETTING_STARTED.md",
           "docs/PHOENIX.md"
         ],
-        "Spectre Studio": ["docs/STUDIO_MONITORING.md"],
+        "Spectre Studio": [
+          "docs/STUDIO_MONITORING.md",
+          "docs/STUDIO_OPERATIONS.md"
+        ],
         "Protocol and infrastructure": [
           "docs/CONNECTIONS_AND_TRANSPORTS.md",
           "docs/DELIVERY_AND_SECURITY.md",
@@ -109,6 +113,7 @@ defmodule SpectrePulse.MixProject do
           Spectre.Pulse.ConnectionSpec,
           Spectre.Pulse.AgentDescriptor,
           Spectre.Pulse.Principal,
+          Spectre.Pulse.Operations,
           Spectre.Pulse.RuntimeInfo,
           Spectre.Pulse.Monitoring,
           Spectre.Pulse.Handshake,

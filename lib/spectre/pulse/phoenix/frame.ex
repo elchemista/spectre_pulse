@@ -10,6 +10,14 @@ defmodule Spectre.Pulse.Phoenix.Frame do
 
   @monitor_enable "agent.runtime.monitor.enable"
   @monitor_disable "agent.runtime.monitor.disable"
+  @operations_monitor_enable "agent.operations.monitor.enable"
+  @operations_monitor_disable "agent.operations.monitor.disable"
+  @monitor_commands [
+    @monitor_enable,
+    @monitor_disable,
+    @operations_monitor_enable,
+    @operations_monitor_disable
+  ]
 
   @doc false
   @spec manifest(Connection.t()) :: binary()
@@ -56,12 +64,16 @@ defmodule Spectre.Pulse.Phoenix.Frame do
   @doc false
   @spec command(binary()) ::
           :not_control
-          | {:ok, {:monitor_enable, map()} | {:monitor_disable, term()}}
+          | {:ok,
+             {:monitor_enable, map()}
+             | {:monitor_disable, term()}
+             | {:operations_monitor_enable, map()}
+             | {:operations_monitor_disable, term()}}
           | {:error, Error.t()}
   def command(frame) when is_binary(frame) do
     case Jason.decode(frame) do
       {:ok, %{"pulse" => "connection", "type" => type} = value}
-      when type in [@monitor_enable, @monitor_disable] ->
+      when type in @monitor_commands ->
         monitoring_command(type, value)
 
       _not_control ->
@@ -87,13 +99,23 @@ defmodule Spectre.Pulse.Phoenix.Frame do
   def metadata(_opts), do: %{}
 
   @spec monitoring_command(String.t(), map()) ::
-          {:ok, {:monitor_enable, map()} | {:monitor_disable, term()}}
+          {:ok,
+           {:monitor_enable, map()}
+           | {:monitor_disable, term()}
+           | {:operations_monitor_enable, map()}
+           | {:operations_monitor_disable, term()}}
           | {:error, Error.t()}
   defp monitoring_command(@monitor_enable, %{"version" => 1} = value),
     do: {:ok, {:monitor_enable, value}}
 
   defp monitoring_command(@monitor_disable, %{"version" => 1} = value),
     do: {:ok, {:monitor_disable, Map.get(value, "subscription_id")}}
+
+  defp monitoring_command(@operations_monitor_enable, %{"version" => 1} = value),
+    do: {:ok, {:operations_monitor_enable, value}}
+
+  defp monitoring_command(@operations_monitor_disable, %{"version" => 1} = value),
+    do: {:ok, {:operations_monitor_disable, Map.get(value, "subscription_id")}}
 
   defp monitoring_command(_type, _value),
     do: {:error, Error.not_sent(:validation, :unsupported_connection_protocol_version)}

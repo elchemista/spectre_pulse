@@ -23,6 +23,7 @@ defmodule Spectre.Pulse do
   alias Spectre.Pulse.Inbound
   alias Spectre.Pulse.Monitoring
   alias Spectre.Pulse.Network
+  alias Spectre.Pulse.Operations
   alias Spectre.Pulse.Options
   alias Spectre.Pulse.Protocol
   alias Spectre.Pulse.Runtime
@@ -229,10 +230,28 @@ defmodule Spectre.Pulse do
           {:ok, map()} | {:error, Error.t()}
   def runtime_info(agent, subject, opts \\ []), do: RuntimeInfo.fetch(agent, subject, opts)
 
+  @doc """
+  Returns current, bounded Work and Vigil views for one Agent Instance.
+
+  Trusted host code may call this directly. Transport integrations serving a
+  remote Studio must pass `connection: connection_id`; Pulse then requires the
+  `agent.operations.read` grant and verifies that the Agent is exposed on that
+  connection. Terminal loops are excluded unless `include_terminal: true` is
+  requested.
+  """
+  @spec operations(module() | Spectre.AgentRef.t() | String.t(), term(), keyword()) ::
+          {:ok, map()} | {:error, Error.t()}
+  def operations(agent, subject, opts \\ []), do: Operations.list(agent, subject, opts)
+
   @doc "Returns active near-realtime runtime subscriptions known to Pulse."
   @spec monitoring_subscriptions(term() | :all) :: [map()]
   def monitoring_subscriptions(connection_id \\ :all),
     do: Monitoring.subscriptions(connection_id)
+
+  @doc "Returns active near-realtime Work and Vigil subscriptions known to Pulse."
+  @spec operation_monitoring_subscriptions(term() | :all) :: [map()]
+  def operation_monitoring_subscriptions(connection_id \\ :all),
+    do: Monitoring.operation_subscriptions(connection_id)
 
   @doc """
   Executes a pending Pulse effect through the canonical Spectre boundary.

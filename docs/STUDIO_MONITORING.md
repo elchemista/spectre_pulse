@@ -1,10 +1,14 @@
-# Spectre Studio and runtime monitoring
+# Spectre Studio OTP runtime monitoring
 
 Pulse provides a temporary, connection-scoped stream of safe OTP process
 snapshots. Spectre Studio can enable it when an operator opens a LiveView panel
 and disable it when the panel closes.
 
 Monitoring is a runtime call, not an application setting.
+
+Work and Vigil lifecycle monitoring is documented separately in
+[Work and Vigil monitoring](STUDIO_OPERATIONS.md). The two capabilities share a
+connection and lifecycle engine but use independent scopes and frame types.
 
 ```text
 Studio opens Agent panel
@@ -161,6 +165,7 @@ resolvable at enable time:
   "pulse": "connection",
   "version": 1,
   "type": "agent.runtime.monitor.enabled",
+  "monitor": "runtime",
   "request_id": "liveview-panel-42",
   "subscription_id": "019...",
   "connection_id": "019...",
@@ -302,7 +307,7 @@ The following are Pulse guardrails, not user configuration:
 | Maximum interval | 60,000 ms |
 | Minimum explicit duration | 250 ms |
 | Maximum explicit duration | 3,600,000 ms |
-| Active subscriptions per connection | 16 |
+| Active OTP + operations subscriptions per connection | 16 |
 | Maximum sink queue before coalescing | 100 messages |
 | Default / hard collection entries | 128 / 256 |
 | Default / hard serialization depth | 6 / 8 |

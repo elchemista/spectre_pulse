@@ -54,10 +54,10 @@ Important fields:
 | `priority` | Technical route priority |
 | `metadata` | Public technical metadata, never credentials |
 
-Pulse currently enforces `agent.runtime.read` and
-`agent.runtime.stream` for its built-in runtime capabilities. Applications may
-define additional scope names, but their own authorization callbacks must
-enforce the meaning of those names.
+Pulse enforces `agent.runtime.read`, `agent.runtime.stream`,
+`agent.operations.read`, and `agent.operations.stream` for its built-in Studio
+capabilities. Applications may define additional scope names, but their own
+authorization callbacks must enforce the meaning of those names.
 
 One definition may create several live connections. One live connection can
 expose several Agents. Definitions may overlap, so the same Agent can be
