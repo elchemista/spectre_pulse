@@ -872,6 +872,58 @@ limits when exposing this capability across a network boundary.
 Mailbox contents, process dictionaries and raw GenServer state are never
 returned by this capability.
 
+Studio may also request a temporary near-realtime stream at runtime. This is
+not a connection setting: the authenticated WebSocket client sends an enable
+call when a LiveView starts monitoring an Agent Instance, then sends disable
+when monitoring ends. The connection only declares the two permission scopes:
+
+```elixir
+[
+  id: :studio,
+  transport: :websocket,
+  scopes: ["agent.runtime.read", "agent.runtime.stream"]
+]
+```
+
+Enable one subscription:
+
+```json
+{
+  "pulse": "connection",
+  "version": 1,
+  "type": "agent.runtime.monitor.enable",
+  "request_id": "liveview-panel-42",
+  "agent_address": "spectre://acme/researcher",
+  "subject": "account-123",
+  "interval_ms": 1000,
+  "duration_ms": 60000,
+  "fields": ["memory", "message_queue_len", "reductions", "status"]
+}
+```
+
+Pulse replies immediately with
+`agent.runtime.monitor.enabled` and snapshot sequence `0`, then pushes
+`agent.runtime.monitor.update` frames on the same WebSocket. Studio closes the
+stream with the server-generated id:
+
+```json
+{
+  "pulse": "connection",
+  "version": 1,
+  "type": "agent.runtime.monitor.disable",
+  "subscription_id": "019..."
+}
+```
+
+An optional `duration_ms` produces `agent.runtime.monitor.expired`; otherwise
+the subscription remains active until disable or WebSocket disconnection.
+Pulse never overlaps samples for one subscription, removes every subscription
+when its transport owner exits, and applies internal frequency, count, and
+backpressure limits. `Spectre.Pulse.monitoring_subscriptions/1` exposes the
+safe active catalog to trusted host tooling. Other transports can drive the
+same `Spectre.Pulse.Monitoring` API and event maps without copying this
+lifecycle or authorization logic.
+
 Sender-declared metadata is exposed separately as
 `input.meta.pulse.declared_metadata`; it is never merged into the transport's
 `verified` facts. Remote controlled values are decoded through fixed

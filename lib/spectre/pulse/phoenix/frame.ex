@@ -8,6 +8,9 @@ defmodule Spectre.Pulse.Phoenix.Frame do
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Receipt
 
+  @monitor_enable "agent.runtime.monitor.enable"
+  @monitor_disable "agent.runtime.monitor.disable"
+
   @doc false
   @spec manifest(Connection.t()) :: binary()
   def manifest(connection) do
@@ -51,12 +54,49 @@ defmodule Spectre.Pulse.Phoenix.Frame do
   def error(reason), do: error(Error.not_sent(:validation, reason))
 
   @doc false
+  @spec command(binary()) ::
+          :not_control
+          | {:ok, {:monitor_enable, map()} | {:monitor_disable, term()}}
+          | {:error, Error.t()}
+  def command(frame) when is_binary(frame) do
+    case Jason.decode(frame) do
+      {:ok, %{"pulse" => "connection", "type" => type} = value}
+      when type in [@monitor_enable, @monitor_disable] ->
+        monitoring_command(type, value)
+
+      _not_control ->
+        :not_control
+    end
+  end
+
+  @doc false
+  @spec monitoring(map()) :: binary()
+  def monitoring(event) when is_map(event) do
+    event
+    |> Map.put("pulse", "connection")
+    |> Map.put("version", 1)
+    |> encode()
+  end
+
+  @doc false
   @spec metadata(term()) :: map()
   def metadata(opts) when is_list(opts) and opts != [] do
     if Keyword.keyword?(opts), do: opcode_metadata(opts), else: %{}
   end
 
   def metadata(_opts), do: %{}
+
+  @spec monitoring_command(String.t(), map()) ::
+          {:ok, {:monitor_enable, map()} | {:monitor_disable, term()}}
+          | {:error, Error.t()}
+  defp monitoring_command(@monitor_enable, %{"version" => 1} = value),
+    do: {:ok, {:monitor_enable, value}}
+
+  defp monitoring_command(@monitor_disable, %{"version" => 1} = value),
+    do: {:ok, {:monitor_disable, Map.get(value, "subscription_id")}}
+
+  defp monitoring_command(_type, _value),
+    do: {:error, Error.not_sent(:validation, :unsupported_connection_protocol_version)}
 
   @spec opcode_metadata(keyword()) :: map()
   defp opcode_metadata(opts) do

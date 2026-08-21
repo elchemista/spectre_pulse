@@ -21,6 +21,7 @@ defmodule Spectre.Pulse do
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Executor
   alias Spectre.Pulse.Inbound
+  alias Spectre.Pulse.Monitoring
   alias Spectre.Pulse.Network
   alias Spectre.Pulse.Options
   alias Spectre.Pulse.Protocol
@@ -227,6 +228,11 @@ defmodule Spectre.Pulse do
   @spec runtime_info(module() | Spectre.AgentRef.t() | String.t(), term(), keyword()) ::
           {:ok, map()} | {:error, Error.t()}
   def runtime_info(agent, subject, opts \\ []), do: RuntimeInfo.fetch(agent, subject, opts)
+
+  @doc "Returns active near-realtime runtime subscriptions known to Pulse."
+  @spec monitoring_subscriptions(term() | :all) :: [map()]
+  def monitoring_subscriptions(connection_id \\ :all),
+    do: Monitoring.subscriptions(connection_id)
 
   @doc """
   Executes a pending Pulse effect through the canonical Spectre boundary.

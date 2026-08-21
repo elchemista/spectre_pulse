@@ -40,9 +40,11 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Handshake
   alias Spectre.Pulse.Local
+  alias Spectre.Pulse.Monitoring
   alias Spectre.Pulse.Phoenix.Frame
   alias Spectre.Pulse.Phoenix.Socket
   alias Spectre.Pulse.Runtime
+  alias Spectre.Pulse.RuntimeInfo
 
   alias __MODULE__.AgentOne
   alias __MODULE__.AgentTwo
@@ -352,6 +354,99 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
              )
   end
 
+  test "Studio enables and disables live monitoring through Phoenix at runtime" do
+    configure_monitoring_connection()
+    subject = "phoenix-live-#{System.unique_integer([:positive])}"
+    assert {:ok, instance} = Spectre.summon(agent: AgentOne, subject: subject)
+
+    on_exit(fn ->
+      if Process.alive?(instance), do: Process.exit(instance, :kill)
+    end)
+
+    transport_info = %{
+      endpoint: TestEndpoint,
+      transport: :websocket,
+      params: %{"token" => "private-token"},
+      connect_info: %{peer_data: %{address: {127, 0, 0, 1}}}
+    }
+
+    assert {:ok, pending} = Socket.connect(transport_info, connection: :studio_monitoring)
+    assert {:ok, state} = Socket.init(pending)
+    assert_receive {:spectre_pulse_manifest, _connection_id}
+
+    enable =
+      Jason.encode!(%{
+        "pulse" => "connection",
+        "version" => 1,
+        "type" => "agent.runtime.monitor.enable",
+        "request_id" => "liveview-runtime",
+        "agent_address" => "spectre://connections/agent-one",
+        "subject" => subject,
+        "interval_ms" => 250,
+        "duration_ms" => 1_000,
+        "fields" => ["memory", "message_queue_len"]
+      })
+
+    assert {:reply, :ok, {:text, enabled_frame}, state} =
+             Socket.handle_in({enable, opcode: :text}, state)
+
+    assert {:ok,
+            %{
+              "type" => "agent.runtime.monitor.enabled",
+              "request_id" => "liveview-runtime",
+              "subscription_id" => subscription_id,
+              "sequence" => 0
+            }} = Jason.decode(enabled_frame)
+
+    assert_receive {:spectre_pulse_monitoring, update}, 500
+
+    assert {:push, {:text, update_frame}, state} =
+             Socket.handle_info({:spectre_pulse_monitoring, update}, state)
+
+    assert {:ok,
+            %{
+              "type" => "agent.runtime.monitor.update",
+              "subscription_id" => ^subscription_id,
+              "sequence" => 1,
+              "snapshot" => %{"process" => process}
+            }} = Jason.decode(update_frame)
+
+    assert Map.keys(process) |> Enum.sort() == ["memory", "message_queue_len"]
+
+    disable =
+      Jason.encode!(%{
+        "pulse" => "connection",
+        "version" => 1,
+        "type" => "agent.runtime.monitor.disable",
+        "subscription_id" => subscription_id
+      })
+
+    assert {:reply, :ok, {:text, disabled_frame}, state} =
+             Socket.handle_in({disable, opcode: :text}, state)
+
+    assert {:ok,
+            %{
+              "type" => "agent.runtime.monitor.disabled",
+              "subscription_id" => ^subscription_id
+            }} = Jason.decode(disabled_frame)
+
+    refute_receive {:spectre_pulse_monitoring, %{"subscription_id" => ^subscription_id}}, 350
+
+    invalid_version =
+      enable
+      |> Jason.decode!()
+      |> Map.put("version", 2)
+      |> Jason.encode!()
+
+    assert {:reply, :error, {:text, invalid_frame}, state} =
+             Socket.handle_in({invalid_version, opcode: :text}, state)
+
+    assert {:ok, %{"error" => %{"code" => "unsupported_connection_protocol_version"}}} =
+             Jason.decode(invalid_frame)
+
+    assert :ok = Socket.terminate(:closed, state)
+  end
+
   test "invalid selectors and duplicate spec identifiers fail atomically" do
     assert {:error, %Error{reason: {:unknown_connection_agent, AgentTwo}}} =
              ConnectionRegistry.configure(
@@ -425,6 +520,39 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
                    authenticate: authenticator,
                    authorize: authorizer,
                    scopes: ["studio.observe"]
+                 ]
+               ],
+               descriptors()
+             )
+  end
+
+  defp configure_monitoring_connection do
+    scopes = [
+      "studio.observe",
+      RuntimeInfo.scope(),
+      Monitoring.scope()
+    ]
+
+    authenticator = fn credential, _context ->
+      if get_in(credential, [:params, "token"]) == "private-token",
+        do: {:ok, %{id: "operator-1", kind: :studio, scopes: scopes}},
+        else: {:error, :invalid_token}
+    end
+
+    authorizer = fn _principal, _request -> {:ok, granted_scopes: scopes} end
+
+    assert :ok =
+             ConnectionRegistry.configure(
+               self(),
+               [
+                 [
+                   id: :studio_monitoring,
+                   transport: :websocket,
+                   mode: :listen,
+                   agents: [AgentOne],
+                   authenticate: authenticator,
+                   authorize: authorizer,
+                   scopes: scopes
                  ]
                ],
                descriptors()

@@ -6,15 +6,17 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Handshake
   alias Spectre.Pulse.Local
+  alias Spectre.Pulse.Monitoring
   alias Spectre.Pulse.Phoenix.Frame
   alias Spectre.Pulse.Transports.WebSocket
 
-  @enforce_keys [:connection, :options]
-  defstruct [:connection, :options]
+  @enforce_keys [:connection, :options, :monitoring]
+  defstruct [:connection, :options, :monitoring]
 
   @type t :: %__MODULE__{
           connection: Connection.t(),
-          options: keyword()
+          options: keyword(),
+          monitoring: pid()
         }
 
   @doc false
@@ -34,8 +36,15 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   def init({ticket, opts}) when is_list(opts) do
     case Handshake.open(ticket, self()) do
       {:ok, connection} ->
-        send(self(), {:spectre_pulse_manifest, connection.id})
-        {:ok, %__MODULE__{connection: connection, options: opts}}
+        case Monitoring.start_link(connection: connection.id, sink: self()) do
+          {:ok, monitoring} ->
+            send(self(), {:spectre_pulse_manifest, connection.id})
+            {:ok, %__MODULE__{connection: connection, options: opts, monitoring: monitoring}}
+
+          {:error, reason} ->
+            ConnectionRegistry.close(connection.id)
+            {:stop, reason}
+        end
 
       {:error, %Error{} = error} ->
         {:stop, error}
@@ -48,12 +57,10 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   @spec handle_in({term(), keyword()}, t()) ::
           {:reply, :ok | :error, {:text, binary()}, t()} | {:stop, term(), t()}
   def handle_in({frame, frame_opts}, %__MODULE__{} = state) when is_binary(frame) do
-    case WebSocket.handle_frame(frame, inbound_context(state, frame_opts), inbound_opts(state)) do
-      {:ok, result} ->
-        {:reply, :ok, {:text, Frame.receipt(result.receipt)}, touch(state)}
-
-      {:error, %Error{} = error} ->
-        {:reply, :error, {:text, Frame.error(error)}, touch(state)}
+    case Frame.command(frame) do
+      {:ok, command} -> handle_command(command, state)
+      {:error, %Error{} = error} -> error_reply(error, state)
+      :not_control -> handle_envelope(frame, frame_opts, state)
     end
   end
 
@@ -72,6 +79,10 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   def handle_info({:spectre_pulse_frame, frame}, %__MODULE__{} = state) when is_binary(frame),
     do: {:push, {:text, frame}, touch(state)}
 
+  def handle_info({:spectre_pulse_monitoring, event}, %__MODULE__{} = state)
+      when is_map(event),
+      do: {:push, {:text, Frame.monitoring(event)}, touch(state)}
+
   def handle_info(_message, %__MODULE__{} = state), do: {:ok, state}
 
   @doc false
@@ -85,8 +96,10 @@ defmodule Spectre.Pulse.Phoenix.Socket do
 
   @doc false
   @spec terminate(term(), t() | term()) :: :ok
-  def terminate(_reason, %__MODULE__{} = state),
-    do: ConnectionRegistry.close(state.connection.id)
+  def terminate(_reason, %__MODULE__{} = state) do
+    if Process.alive?(state.monitoring), do: GenServer.stop(state.monitoring, :normal)
+    ConnectionRegistry.close(state.connection.id)
+  end
 
   def terminate(_reason, _state), do: :ok
 
@@ -169,6 +182,39 @@ defmodule Spectre.Pulse.Phoenix.Socket do
         else: {:error, {:connection_recipient_not_exposed, address}}
     end
   end
+
+  @spec handle_envelope(binary(), keyword(), t()) ::
+          {:reply, :ok | :error, {:text, binary()}, t()}
+  defp handle_envelope(frame, frame_opts, state) do
+    case WebSocket.handle_frame(frame, inbound_context(state, frame_opts), inbound_opts(state)) do
+      {:ok, result} ->
+        {:reply, :ok, {:text, Frame.receipt(result.receipt)}, touch(state)}
+
+      {:error, %Error{} = error} ->
+        error_reply(error, state)
+    end
+  end
+
+  @spec handle_command({:monitor_enable, map()} | {:monitor_disable, term()}, t()) ::
+          {:reply, :ok | :error, {:text, binary()}, t()}
+  defp handle_command({:monitor_enable, attrs}, state) do
+    monitoring_reply(Monitoring.enable(state.monitoring, attrs), state)
+  end
+
+  defp handle_command({:monitor_disable, subscription_id}, state) do
+    monitoring_reply(Monitoring.disable(state.monitoring, subscription_id), state)
+  end
+
+  @spec monitoring_reply({:ok, map()} | {:error, Error.t()}, t()) ::
+          {:reply, :ok | :error, {:text, binary()}, t()}
+  defp monitoring_reply({:ok, event}, state),
+    do: {:reply, :ok, {:text, Frame.monitoring(event)}, touch(state)}
+
+  defp monitoring_reply({:error, %Error{} = error}, state), do: error_reply(error, state)
+
+  @spec error_reply(Error.t(), t()) :: {:reply, :error, {:text, binary()}, t()}
+  defp error_reply(error, state),
+    do: {:reply, :error, {:text, Frame.error(error)}, touch(state)}
 
   @spec touch(t()) :: t()
   defp touch(state) do
