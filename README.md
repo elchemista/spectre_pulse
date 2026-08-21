@@ -83,7 +83,7 @@ Install Spectre from Hex and Pulse from its GitHub release tag:
 ```elixir
 def deps do
   [
-    {:spectre, "~> 0.3.0"},
+    {:spectre, "~> 0.3.2"},
     {:spectre_pulse, github: "elchemista/spectre_pulse", branch: "main"}
   ]
 end
@@ -867,6 +867,8 @@ Remote calls require the `agent.runtime.read` scope and the Agent must be
 exposed by that connection. Trusted host code may omit `:connection`. The
 snapshot includes memory, mailbox length, reductions, heap/stack sizes,
 status, current/initial calls, links, monitors and garbage-collection data.
+Use `:max_collection_entries` and `:max_depth` to lower the hard response
+limits when exposing this capability across a network boundary.
 Mailbox contents, process dictionaries and raw GenServer state are never
 returned by this capability.
 

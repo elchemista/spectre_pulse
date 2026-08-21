@@ -1,14 +1,12 @@
 defmodule Spectre.Pulse.Phoenix.Socket do
   @moduledoc false
 
-  alias Spectre.Pulse.AgentDescriptor
   alias Spectre.Pulse.Connection
   alias Spectre.Pulse.ConnectionRegistry
-  alias Spectre.Pulse.ConnectionSpec
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Handshake
   alias Spectre.Pulse.Local
-  alias Spectre.Pulse.Receipt
+  alias Spectre.Pulse.Phoenix.Frame
   alias Spectre.Pulse.Transports.WebSocket
 
   @enforce_keys [:connection, :options]
@@ -22,19 +20,10 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   @doc false
   @spec connect(map(), keyword()) :: {:ok, {Handshake.t(), keyword()}} | {:error, term()}
   def connect(transport_info, opts) when is_map(transport_info) and is_list(opts) do
-    with true <- Keyword.keyword?(opts),
-         {:ok, connection_spec} <- Keyword.fetch(opts, :connection),
-         {:ok, ticket} <-
-           Handshake.prepare(connection_spec, transport_info,
-             context: handshake_context(transport_info),
-             direction: :inbound,
-             metadata: Keyword.get(opts, :metadata, %{})
-           ) do
+    with :ok <- validate_options(opts),
+         {:ok, connection_spec} <- fetch_connection_option(opts),
+         {:ok, ticket} <- prepare_handshake(connection_spec, transport_info, opts) do
       {:ok, {ticket, opts}}
-    else
-      false -> {:error, :invalid_pulse_phoenix_options}
-      :error -> {:error, :pulse_connection_spec_required}
-      {:error, %Error{} = error} -> {:error, error}
     end
   end
 
@@ -59,30 +48,17 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   @spec handle_in({term(), keyword()}, t()) ::
           {:reply, :ok | :error, {:text, binary()}, t()} | {:stop, term(), t()}
   def handle_in({frame, frame_opts}, %__MODULE__{} = state) when is_binary(frame) do
-    inbound_opts =
-      state.options
-      |> Keyword.get(:inbound, [])
-      |> Keyword.put(:target_resolver, recipient_resolver(state.connection))
-
-    context = %{
-      authenticated_identity: state.connection.principal.identity,
-      binding: :websocket,
-      peer: state.connection.peer_id,
-      verified: state.connection.verified,
-      metadata: %{connection_id: state.connection.id, frame: frame_metadata(frame_opts)}
-    }
-
-    case WebSocket.handle_frame(frame, context, inbound_opts) do
+    case WebSocket.handle_frame(frame, inbound_context(state, frame_opts), inbound_opts(state)) do
       {:ok, result} ->
-        {:reply, :ok, {:text, encode_receipt(result.receipt)}, touch(state)}
+        {:reply, :ok, {:text, Frame.receipt(result.receipt)}, touch(state)}
 
       {:error, %Error{} = error} ->
-        {:reply, :error, {:text, encode_error(error)}, touch(state)}
+        {:reply, :error, {:text, Frame.error(error)}, touch(state)}
     end
   end
 
   def handle_in({_frame, _frame_opts}, %__MODULE__{} = state),
-    do: {:reply, :error, {:text, encode_error(:binary_frame_expected)}, state}
+    do: {:reply, :error, {:text, Frame.error(:binary_frame_expected)}, state}
 
   def handle_in(frame, state), do: {:stop, {:invalid_pulse_phoenix_frame, frame}, state}
 
@@ -90,7 +66,7 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   @spec handle_info(term(), t()) :: {:ok, t()} | {:push, {:text, binary()}, t()}
   def handle_info({:spectre_pulse_manifest, connection_id}, %__MODULE__{} = state)
       when connection_id == state.connection.id do
-    {:push, {:text, encode_manifest(state.connection)}, state}
+    {:push, {:text, Frame.manifest(state.connection)}, state}
   end
 
   def handle_info({:spectre_pulse_frame, frame}, %__MODULE__{} = state) when is_binary(frame),
@@ -114,15 +90,75 @@ defmodule Spectre.Pulse.Phoenix.Socket do
 
   def terminate(_reason, _state), do: :ok
 
+  @spec validate_options(term()) :: :ok | {:error, atom()}
+  defp validate_options(opts) do
+    if Keyword.keyword?(opts),
+      do: validate_option_values(opts),
+      else: {:error, :invalid_pulse_phoenix_options}
+  end
+
+  @spec validate_option_values(keyword()) :: :ok | {:error, atom()}
+  defp validate_option_values(opts) do
+    allowed = [:connection, :inbound, :metadata]
+    inbound = Keyword.get(opts, :inbound, [])
+    metadata = Keyword.get(opts, :metadata, %{})
+
+    if Keyword.keys(opts) -- allowed == [] and is_list(inbound) and Keyword.keyword?(inbound) and
+         is_map(metadata),
+       do: :ok,
+       else: {:error, :invalid_pulse_phoenix_options}
+  end
+
+  @spec fetch_connection_option(keyword()) :: {:ok, term()} | {:error, atom()}
+  defp fetch_connection_option(opts) do
+    case Keyword.fetch(opts, :connection) do
+      {:ok, connection} -> {:ok, connection}
+      :error -> {:error, :pulse_connection_spec_required}
+    end
+  end
+
+  @spec prepare_handshake(term(), map(), keyword()) ::
+          {:ok, Handshake.t()} | {:error, Error.t()}
+  defp prepare_handshake(connection_spec, transport_info, opts) do
+    Handshake.prepare(connection_spec, transport_info,
+      context: handshake_context(transport_info),
+      direction: :inbound,
+      metadata: Keyword.get(opts, :metadata, %{})
+    )
+  end
+
   @spec handshake_context(map()) :: map()
   defp handshake_context(transport_info) do
+    connect_info = Map.get(transport_info, :connect_info, %{})
+
     %{
       binding: :websocket,
       endpoint: Map.get(transport_info, :endpoint),
       transport: Map.get(transport_info, :transport),
-      params: Map.get(transport_info, :params, %{}),
-      connect_info: Map.get(transport_info, :connect_info, %{})
+      peer_data: peer_data(connect_info)
     }
+  end
+
+  @spec peer_data(term()) :: term() | nil
+  defp peer_data(connect_info) when is_map(connect_info), do: Map.get(connect_info, :peer_data)
+  defp peer_data(_connect_info), do: nil
+
+  @spec inbound_context(t(), keyword()) :: map()
+  defp inbound_context(state, frame_opts) do
+    %{
+      authenticated_identity: state.connection.principal.identity,
+      binding: :websocket,
+      peer: state.connection.peer_id,
+      verified: state.connection.verified,
+      metadata: %{connection_id: state.connection.id, frame: Frame.metadata(frame_opts)}
+    }
+  end
+
+  @spec inbound_opts(t()) :: keyword()
+  defp inbound_opts(state) do
+    state.options
+    |> Keyword.get(:inbound, [])
+    |> Keyword.put(:target_resolver, recipient_resolver(state.connection))
   end
 
   @spec recipient_resolver(Connection.t()) :: (String.t(), term() -> term())
@@ -134,77 +170,11 @@ defmodule Spectre.Pulse.Phoenix.Socket do
     end
   end
 
-  @spec encode_manifest(Connection.t()) :: binary()
-  defp encode_manifest(connection) do
-    spec =
-      case ConnectionRegistry.fetch_spec(connection.spec_id) do
-        {:ok, spec} -> ConnectionSpec.to_public_map(spec)
-        :error -> %{id: connection.spec_id, transport: connection.transport}
-      end
-
-    agents =
-      case ConnectionRegistry.exposed_agents(connection.spec_id) do
-        {:ok, descriptors} -> Enum.map(descriptors, &AgentDescriptor.to_wire/1)
-        :error -> []
-      end
-
-    encode(%{
-      "pulse" => "connection",
-      "version" => 1,
-      "type" => "manifest",
-      "connection" => Connection.to_public_map(connection),
-      "spec" => spec,
-      "agents" => agents
-    })
-  end
-
-  @spec encode_receipt(Receipt.t()) :: binary()
-  defp encode_receipt(receipt) do
-    encode(%{
-      "pulse" => "connection",
-      "version" => 1,
-      "type" => "receipt",
-      "receipt" => Receipt.to_wire(receipt)
-    })
-  end
-
-  @spec encode_error(Error.t() | term()) :: binary()
-  defp encode_error(%Error{} = error) do
-    encode(%{
-      "pulse" => "connection",
-      "version" => 1,
-      "type" => "error",
-      "error" => %{
-        "kind" => Atom.to_string(error.kind),
-        "outcome" => Atom.to_string(error.outcome),
-        "reason" => inspect(error.reason),
-        "message_id" => error.message_id
-      }
-    })
-  end
-
-  defp encode_error(reason), do: encode_error(Error.not_sent(:validation, reason))
-
-  @spec encode(map()) :: binary()
-  defp encode(value) do
-    case Jason.encode(value) do
-      {:ok, encoded} ->
-        encoded
-
-      {:error, reason} ->
-        Jason.encode!(%{"pulse" => "connection", "type" => "error", "reason" => inspect(reason)})
-    end
-  end
-
-  @spec frame_metadata(term()) :: map()
-  defp frame_metadata(opts) when is_list(opts), do: Map.new(opts)
-  defp frame_metadata(_opts), do: %{}
-
   @spec touch(t()) :: t()
   defp touch(state) do
     case ConnectionRegistry.touch(state.connection.id) do
       {:ok, connection} -> %{state | connection: connection}
-      _other -> state
+      _unavailable -> state
     end
   end
 end

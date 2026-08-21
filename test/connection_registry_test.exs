@@ -6,6 +6,16 @@ defmodule Spectre.Pulse.ConnectionRegistryTest.AgentOne do
     identity("spectre://connections/agent-one")
     advertise(capabilities: ["semantic-cache"])
   end
+
+  flow :studio do
+    on :ping, pulse: "studio.ping" do
+      run(:ping)
+    end
+  end
+
+  @doc false
+  @spec ping(Spectre.Input.t(), Spectre.Context.t()) :: String.t()
+  def ping(_input, _context), do: "pong"
 end
 
 defmodule Spectre.Pulse.ConnectionRegistryTest.AgentTwo do
@@ -22,12 +32,15 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
   use ExUnit.Case, async: false
 
   alias Spectre.Pulse.AgentDescriptor
+  alias Spectre.Pulse.Codec.JSON
   alias Spectre.Pulse.Connection
   alias Spectre.Pulse.ConnectionRegistry
   alias Spectre.Pulse.ConnectionSpec
+  alias Spectre.Pulse.Envelope
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Handshake
   alias Spectre.Pulse.Local
+  alias Spectre.Pulse.Phoenix.Frame
   alias Spectre.Pulse.Phoenix.Socket
   alias Spectre.Pulse.Runtime
 
@@ -184,6 +197,7 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
 
   test "the dependency-free Phoenix bridge opens a connection and pushes its manifest" do
     configure_authenticated_connection()
+    assert {:ok, _subscription} = Spectre.Pulse.subscribe(AgentOne)
 
     transport_info = %{
       endpoint: TestEndpoint,
@@ -207,8 +221,135 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
             }} = Jason.decode(manifest)
 
     assert Enum.any?(agents, &(&1["address"] == "spectre://connections/agent-one"))
+
+    envelope =
+      Envelope.new!(
+        from: "spectre://studio/operator-1",
+        to: "spectre://connections/agent-one",
+        act: :request,
+        payload: %{type: "studio.ping", data: %{}}
+      )
+
+    assert {:ok, encoded_envelope} = JSON.encode(envelope, [])
+
+    assert {:reply, :ok, {:text, receipt}, state} =
+             Socket.handle_in({encoded_envelope, opcode: :text}, state)
+
+    assert {:ok, %{"type" => "receipt", "receipt" => %{"status" => "accepted"}}} =
+             Jason.decode(receipt)
+
+    denied_envelope = %{envelope | to: "spectre://connections/agent-two"}
+    assert {:ok, denied_frame} = JSON.encode(denied_envelope, [])
+
+    assert {:reply, :error, {:text, denied_error}, state} =
+             Socket.handle_in({denied_frame, opcode: :text}, state)
+
+    assert {:ok, %{"type" => "error"}} = Jason.decode(denied_error)
+
+    assert {:reply, :error, {:text, invalid_error}, ^state} =
+             Socket.handle_in({:not_binary, []}, state)
+
+    assert {:ok, %{"error" => %{"code" => "binary_frame_expected"}}} =
+             Jason.decode(invalid_error)
+
+    assert {:stop, {:invalid_pulse_phoenix_frame, :invalid}, ^state} =
+             Socket.handle_in(:invalid, state)
+
+    assert {:push, {:text, "outbound"}, state} =
+             Socket.handle_info({:spectre_pulse_frame, "outbound"}, state)
+
+    assert {:ok, ^state} = Socket.handle_info(:ignored, state)
+
+    assert {:reply, :ok, {:pong, "ping"}, state} =
+             Socket.handle_control({"ping", [opcode: :ping]}, state)
+
+    assert {:ok, state} = Socket.handle_control({"pong", [opcode: :pong]}, state)
+
+    encoding_error = Frame.manifest(%{state.connection | metadata: %{pid: self()}})
+
+    assert {:ok, %{"error" => %{"code" => "response_encoding_failed"}}} =
+             Jason.decode(encoding_error)
+
+    fallback_error =
+      Frame.error(%Error{kind: "private", outcome: "private", reason: %{secret: true}})
+
+    assert {:ok,
+            %{
+              "error" => %{
+                "kind" => "request",
+                "outcome" => "not_sent",
+                "code" => "request_failed"
+              }
+            }} = Jason.decode(fallback_error)
+
     assert :ok = Socket.terminate(:closed, state)
+    assert :ok = Socket.terminate(:closed, :invalid_state)
     assert :error = Spectre.Pulse.connection(connection_id)
+
+    assert {:error, :pulse_connection_spec_required} = Socket.connect(transport_info, [])
+    assert {:error, :invalid_pulse_phoenix_connect} = Socket.connect(:invalid, [])
+    assert {:stop, {:invalid_pulse_phoenix_state, :invalid}} = Socket.init(:invalid)
+  end
+
+  test "the Phoenix boundary keeps credentials out of authorization and public errors" do
+    test_pid = self()
+
+    authenticator = fn credential, _context ->
+      if get_in(credential, [:params, "token"]) == "private-token",
+        do: {:ok, %{id: "operator", scopes: ["studio.observe"]}},
+        else: {:error, :invalid_token}
+    end
+
+    authorizer = fn _principal, request ->
+      send(test_pid, {:authorization_request, request})
+      {:ok, granted_scopes: ["studio.observe"]}
+    end
+
+    assert :ok =
+             ConnectionRegistry.configure(
+               self(),
+               [
+                 [
+                   id: :studio,
+                   transport: :websocket,
+                   authenticate: authenticator,
+                   authorize: authorizer,
+                   scopes: ["studio.observe"]
+                 ]
+               ],
+               descriptors()
+             )
+
+    transport_info = %{
+      endpoint: TestEndpoint,
+      transport: :websocket,
+      params: %{"token" => "private-token"},
+      connect_info: %{peer_data: %{address: {127, 0, 0, 1}}}
+    }
+
+    assert {:ok, _pending} = Socket.connect(transport_info, connection: :studio)
+    assert_receive {:authorization_request, request}
+    refute inspect(request) =~ "private-token"
+
+    error =
+      Error.not_sent(:validation, {:invalid_payload, %{token: "never-expose-this"}})
+
+    encoded = Frame.error(error)
+    refute encoded =~ "never-expose-this"
+
+    assert {:ok,
+            %{
+              "type" => "error",
+              "error" => %{"kind" => "validation", "code" => "invalid_payload"}
+            }} = Jason.decode(encoded)
+
+    assert Frame.metadata([:not_a_keyword]) == %{}
+
+    assert {:error, :invalid_pulse_phoenix_options} =
+             Socket.connect(transport_info,
+               connection: :studio,
+               inbound: :invalid
+             )
   end
 
   test "invalid selectors and duplicate spec identifiers fail atomically" do
@@ -280,6 +421,7 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
                    id: :studio,
                    transport: :websocket,
                    mode: :listen,
+                   agents: [AgentOne],
                    authenticate: authenticator,
                    authorize: authorizer,
                    scopes: ["studio.observe"]

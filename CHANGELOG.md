@@ -7,6 +7,10 @@
   Studio-oriented catalog APIs.
 - Add a credential-free handshake boundary and a zero-dependency Phoenix
   WebSocket integration that reuses the host Endpoint and HTTP server.
+- Add scoped, bounded OTP runtime inspection for live Agent Instances without
+  exposing mailbox contents, process dictionaries, or GenServer state.
+- Target Spectre 0.3.2, harden Phoenix error frames against internal-data
+  disclosure, and validate the integration with a real Phoenix application.
 
 ## 0.3.0 — 2026-08-13
 
