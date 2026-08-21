@@ -15,7 +15,7 @@ type, and struct contract.
 ## Manifest
 
 - `Spectre.Pulse`
-  - functions: `close_connection/1`, `config/1`, `connect/3`, `connect/4`, `connection/1`, `connection_specs/0`, `connections/0`, `contacts/1`, `correlate/2`, `deliver/2`, `disconnect/1`, `envelope/1`, `execute/2`, `execute/3`, `execute_turn/1`, `execute_turn/2`, `exposed_agents/1`, `find_contacts/2`, `forget_contact/2`, `local_agents/0`, `open_connection/2`, `protocol/0`, `reachability/2`, `reachability/3`, `receive/2`, `receive/3`, `register_transport/2`, `register_transport/3`, `remember_contact/2`, `remote_agents/0`, `resolve/2`, `start_link/1`, `subscribe/1`, `subscribe/2`, `touch_connection/1`, `touch_connection/2`
+  - functions: `close_connection/1`, `config/1`, `connect/3`, `connect/4`, `connection/1`, `connection_specs/0`, `connections/0`, `contacts/1`, `correlate/2`, `deliver/2`, `disconnect/1`, `envelope/1`, `execute/2`, `execute/3`, `execute_turn/1`, `execute_turn/2`, `exposed_agents/1`, `find_contacts/2`, `forget_contact/2`, `local_agents/0`, `open_connection/2`, `protocol/0`, `reachability/2`, `reachability/3`, `receive/2`, `receive/3`, `register_transport/2`, `register_transport/3`, `remember_contact/2`, `remote_agents/0`, `resolve/2`, `runtime_info/2`, `runtime_info/3`, `start_link/1`, `subscribe/1`, `subscribe/2`, `touch_connection/1`, `touch_connection/2`
   - macros: `__using__/0`, `__using__/1`
 - `Spectre.Pulse.AgentDescriptor`
   - functions: `for_agent/1`, `new/1`, `to_wire/1`
@@ -91,6 +91,8 @@ type, and struct contract.
   - functions: `local/2`, `local/3`, `new/1`, `new!/1`, `node/3`, `node/4`, `pub_sub/2`, `pub_sub/3`, `rest/2`, `rest/3`, `web_socket/2`, `web_socket/3`
 - `Spectre.Pulse.Runtime`
   - functions: `child_spec/1`
+- `Spectre.Pulse.RuntimeInfo`
+  - functions: `fetch/2`, `fetch/3`, `process_info/1`, `process_info/2`, `scope/0`
 - `Spectre.Pulse.Stack`
 - `Spectre.Pulse.State`
   - functions: `contact_book/1`, `contact_book/2`, `correlate/2`, `expectations/1`, `forget_contact/2`, `forget_expectation/2`, `put_expectation/2`, `remember_contact/2`

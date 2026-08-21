@@ -44,6 +44,10 @@ defmodule Spectre.Pulse.ConnectionRegistry do
   @spec local_agents() :: [AgentDescriptor.t()]
   def local_agents, do: call(:local_agents)
 
+  @doc false
+  @spec local_agent(String.t()) :: {:ok, AgentDescriptor.t()} | :error | {:error, Error.t()}
+  def local_agent(address), do: call({:local_agent, address})
+
   @doc "Returns local Agents exposed by one connection spec."
   @spec exposed_agents(term()) :: {:ok, [AgentDescriptor.t()]} | :error
   def exposed_agents(spec_id), do: call({:exposed_agents, spec_id})
@@ -115,6 +119,9 @@ defmodule Spectre.Pulse.ConnectionRegistry do
 
   def handle_call(:local_agents, _from, state),
     do: {:reply, state.local_agents |> Map.values() |> Enum.sort_by(& &1.address), state}
+
+  def handle_call({:local_agent, address}, _from, state),
+    do: {:reply, Map.fetch(state.local_agents, address), state}
 
   def handle_call({:exposed_agents, spec_id}, _from, state) do
     result =

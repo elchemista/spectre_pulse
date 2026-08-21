@@ -89,6 +89,7 @@ defmodule SpectrePulse.MixProject do
           Spectre.Pulse.ConnectionSpec,
           Spectre.Pulse.AgentDescriptor,
           Spectre.Pulse.Principal,
+          Spectre.Pulse.RuntimeInfo,
           Spectre.Pulse.Handshake,
           Spectre.Pulse.Directory,
           Spectre.Pulse.Discovery,

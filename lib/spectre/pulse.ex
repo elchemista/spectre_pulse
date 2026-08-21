@@ -25,6 +25,7 @@ defmodule Spectre.Pulse do
   alias Spectre.Pulse.Options
   alias Spectre.Pulse.Protocol
   alias Spectre.Pulse.Runtime
+  alias Spectre.Pulse.RuntimeInfo
   alias Spectre.Pulse.Stack, as: StackAdapter
   alias Spectre.Pulse.State, as: PulseState
   alias Spectre.State
@@ -214,6 +215,18 @@ defmodule Spectre.Pulse do
   @doc "Returns remote Agents advertised by authenticated live connections."
   @spec remote_agents() :: [Spectre.Pulse.AgentDescriptor.t()]
   defdelegate remote_agents(), to: ConnectionRegistry
+
+  @doc """
+  Returns a current, bounded OTP process snapshot for one Agent Instance.
+
+  Trusted host code may call this directly. Transport integrations serving a
+  remote Studio must pass `connection: connection_id`; Pulse then requires the
+  `agent.runtime.read` grant and verifies that the Agent is exposed on that
+  connection.
+  """
+  @spec runtime_info(module() | Spectre.AgentRef.t() | String.t(), term(), keyword()) ::
+          {:ok, map()} | {:error, Error.t()}
+  def runtime_info(agent, subject, opts \\ []), do: RuntimeInfo.fetch(agent, subject, opts)
 
   @doc """
   Executes a pending Pulse effect through the canonical Spectre boundary.

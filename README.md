@@ -851,6 +851,25 @@ accepted work.
 - Pulse validates the envelope and binds its declared sender to that identity.
 - Spectre or the host authorizes the requested capability and data access.
 
+### Agent OTP runtime inspection
+
+Pulse can resolve a live Spectre Instance and return a bounded, wire-safe OTP
+process snapshot without retaining metrics or reading GenServer state:
+
+```elixir
+{:ok, snapshot} =
+  Spectre.Pulse.runtime_info(MyApp.Agent, subject,
+    connection: studio_connection_id
+  )
+```
+
+Remote calls require the `agent.runtime.read` scope and the Agent must be
+exposed by that connection. Trusted host code may omit `:connection`. The
+snapshot includes memory, mailbox length, reductions, heap/stack sizes,
+status, current/initial calls, links, monitors and garbage-collection data.
+Mailbox contents, process dictionaries and raw GenServer state are never
+returned by this capability.
+
 Sender-declared metadata is exposed separately as
 `input.meta.pulse.declared_metadata`; it is never merged into the transport's
 `verified` facts. Remote controlled values are decoded through fixed
