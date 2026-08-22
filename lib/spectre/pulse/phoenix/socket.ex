@@ -10,13 +10,24 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   alias Spectre.Pulse.Phoenix.Frame
   alias Spectre.Pulse.Transports.WebSocket
 
+  @default_heartbeat_interval_ms 25_000
+  @maximum_heartbeat_interval_ms 55_000
+
   @enforce_keys [:connection, :options, :monitoring]
-  defstruct [:connection, :options, :monitoring]
+  defstruct [
+    :connection,
+    :options,
+    :monitoring,
+    :heartbeat_ref,
+    heartbeat_interval_ms: @default_heartbeat_interval_ms
+  ]
 
   @type t :: %__MODULE__{
           connection: Connection.t(),
           options: keyword(),
-          monitoring: pid()
+          monitoring: pid(),
+          heartbeat_interval_ms: pos_integer(),
+          heartbeat_ref: reference() | nil
         }
 
   @doc false
@@ -39,7 +50,16 @@ defmodule Spectre.Pulse.Phoenix.Socket do
         case Monitoring.start_link(connection: connection.id, sink: self()) do
           {:ok, monitoring} ->
             send(self(), {:spectre_pulse_manifest, connection.id})
-            {:ok, %__MODULE__{connection: connection, options: opts, monitoring: monitoring}}
+
+            state = %__MODULE__{
+              connection: connection,
+              options: opts,
+              monitoring: monitoring,
+              heartbeat_interval_ms:
+                Keyword.get(opts, :heartbeat_interval_ms, @default_heartbeat_interval_ms)
+            }
+
+            {:ok, schedule_heartbeat(state)}
 
           {:error, reason} ->
             ConnectionRegistry.close(connection.id)
@@ -70,7 +90,8 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   def handle_in(frame, state), do: {:stop, {:invalid_pulse_phoenix_frame, frame}, state}
 
   @doc false
-  @spec handle_info(term(), t()) :: {:ok, t()} | {:push, {:text, binary()}, t()}
+  @spec handle_info(term(), t()) ::
+          {:ok, t()} | {:push, {:text | :ping, binary()}, t()}
   def handle_info({:spectre_pulse_manifest, connection_id}, %__MODULE__{} = state)
       when connection_id == state.connection.id do
     {:push, {:text, Frame.manifest(state.connection)}, state}
@@ -82,6 +103,13 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   def handle_info({:spectre_pulse_monitoring, event}, %__MODULE__{} = state)
       when is_map(event),
       do: {:push, {:text, Frame.monitoring(event)}, touch(state)}
+
+  def handle_info(
+        {:spectre_pulse_heartbeat, connection_id},
+        %__MODULE__{connection: %{id: connection_id}} = state
+      ) do
+    {:push, {:ping, "pulse"}, schedule_heartbeat(%{state | heartbeat_ref: nil})}
+  end
 
   def handle_info(_message, %__MODULE__{} = state), do: {:ok, state}
 
@@ -97,6 +125,7 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   @doc false
   @spec terminate(term(), t() | term()) :: :ok
   def terminate(_reason, %__MODULE__{} = state) do
+    cancel_heartbeat(state.heartbeat_ref)
     if Process.alive?(state.monitoring), do: GenServer.stop(state.monitoring, :normal)
     ConnectionRegistry.close(state.connection.id)
   end
@@ -112,14 +141,23 @@ defmodule Spectre.Pulse.Phoenix.Socket do
 
   @spec validate_option_values(keyword()) :: :ok | {:error, atom()}
   defp validate_option_values(opts) do
-    allowed = [:connection, :inbound, :metadata]
+    allowed = [:connection, :heartbeat_interval_ms, :inbound, :metadata]
+
+    heartbeat_interval_ms =
+      Keyword.get(opts, :heartbeat_interval_ms, @default_heartbeat_interval_ms)
+
     inbound = Keyword.get(opts, :inbound, [])
     metadata = Keyword.get(opts, :metadata, %{})
 
     if Keyword.keys(opts) -- allowed == [] and is_list(inbound) and Keyword.keyword?(inbound) and
-         is_map(metadata),
+         is_map(metadata) and valid_heartbeat_interval?(heartbeat_interval_ms),
        do: :ok,
        else: {:error, :invalid_pulse_phoenix_options}
+  end
+
+  @spec valid_heartbeat_interval?(term()) :: boolean()
+  defp valid_heartbeat_interval?(interval_ms) do
+    is_integer(interval_ms) and interval_ms > 0 and interval_ms <= @maximum_heartbeat_interval_ms
   end
 
   @spec fetch_connection_option(keyword()) :: {:ok, term()} | {:error, atom()}
@@ -204,7 +242,10 @@ defmodule Spectre.Pulse.Phoenix.Socket do
         ) ::
           {:reply, :ok | :error, {:text, binary()}, t()}
   defp handle_command({:monitor_enable, attrs}, state) do
-    monitoring_reply(Monitoring.enable(state.monitoring, attrs), state)
+    monitoring_reply(Monitoring.enable(state.monitoring, attrs), state,
+      monitor: :runtime,
+      request_id: Map.get(attrs, "request_id")
+    )
   end
 
   defp handle_command({:monitor_disable, subscription_id}, state) do
@@ -212,23 +253,44 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   end
 
   defp handle_command({:operations_monitor_enable, attrs}, state) do
-    monitoring_reply(Monitoring.enable_operations(state.monitoring, attrs), state)
+    monitoring_reply(Monitoring.enable_operations(state.monitoring, attrs), state,
+      monitor: :operations,
+      request_id: Map.get(attrs, "request_id")
+    )
   end
 
   defp handle_command({:operations_monitor_disable, subscription_id}, state) do
     monitoring_reply(Monitoring.disable_operations(state.monitoring, subscription_id), state)
   end
 
-  @spec monitoring_reply({:ok, map()} | {:error, Error.t()}, t()) ::
+  @spec monitoring_reply({:ok, map()} | {:error, Error.t()}, t(), keyword()) ::
           {:reply, :ok | :error, {:text, binary()}, t()}
-  defp monitoring_reply({:ok, event}, state),
+  defp monitoring_reply(result, state, opts \\ [])
+
+  defp monitoring_reply({:ok, event}, state, _opts),
     do: {:reply, :ok, {:text, Frame.monitoring(event)}, touch(state)}
 
-  defp monitoring_reply({:error, %Error{} = error}, state), do: error_reply(error, state)
+  defp monitoring_reply({:error, %Error{} = error}, state, opts),
+    do: error_reply(error, state, opts)
 
-  @spec error_reply(Error.t(), t()) :: {:reply, :error, {:text, binary()}, t()}
-  defp error_reply(error, state),
-    do: {:reply, :error, {:text, Frame.error(error)}, touch(state)}
+  @spec error_reply(Error.t(), t(), keyword()) :: {:reply, :error, {:text, binary()}, t()}
+  defp error_reply(error, state, opts \\ []),
+    do: {:reply, :error, {:text, Frame.error(error, opts)}, touch(state)}
+
+  @spec schedule_heartbeat(t()) :: t()
+  defp schedule_heartbeat(state) do
+    message = {:spectre_pulse_heartbeat, state.connection.id}
+    ref = Process.send_after(self(), message, state.heartbeat_interval_ms)
+    %{state | heartbeat_ref: ref}
+  end
+
+  @spec cancel_heartbeat(reference() | nil) :: :ok
+  defp cancel_heartbeat(nil), do: :ok
+
+  defp cancel_heartbeat(ref) do
+    Process.cancel_timer(ref)
+    :ok
+  end
 
   @spec touch(t()) :: t()
   defp touch(state) do

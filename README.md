@@ -105,6 +105,10 @@ Phoenix serves the connection at `/pulse/websocket`. Under an HTTPS Endpoint it
 is automatically available through `wss://`; certificates and TLS termination
 remain normal Phoenix/Bandit infrastructure.
 
+The generated transport sends a bounded 25-second WebSocket heartbeat, keeping
+the socket below Phoenix's default inbound-idle timeout. The interval is
+configurable on `use Spectre.Pulse.Phoenix` for stricter proxy infrastructure.
+
 After authentication Pulse immediately sends a credential-free manifest with
 the connection, granted scopes, and exposed Agents. The same socket then accepts
 ordinary Pulse envelopes and Studio control calls. See the complete

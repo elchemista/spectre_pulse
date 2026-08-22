@@ -183,6 +183,27 @@ resolvable at enable time:
 Store the server-generated `subscription_id`. Do not construct subscription ids
 in Studio.
 
+If validation, authorization, routing, or the first sample fails, Pulse returns
+the ordinary safe connection error before creating a subscription. When the
+submitted correlation value is valid, the error retains both `request_id` and
+the monitor kind so Studio can clear its pending request deterministically:
+
+```json
+{
+  "pulse": "connection",
+  "version": 1,
+  "type": "error",
+  "error": {
+    "kind": "routing",
+    "code": "instance_not_found",
+    "monitor": "runtime",
+    "request_id": "liveview-panel-42"
+  }
+}
+```
+
+No `subscription_id` exists in this case.
+
 ## Receive updates
 
 Pulse pushes updates on the same connection:

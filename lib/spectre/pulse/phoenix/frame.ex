@@ -45,21 +45,32 @@ defmodule Spectre.Pulse.Phoenix.Frame do
 
   @doc false
   @spec error(Error.t() | term()) :: binary()
-  def error(%Error{} = error) do
-    encode(%{
-      "pulse" => "connection",
-      "version" => 1,
-      "type" => "error",
-      "error" => %{
+  def error(error), do: error(error, [])
+
+  @doc false
+  @spec error(Error.t() | term(), keyword()) :: binary()
+  def error(%Error{} = error, opts) when is_list(opts) do
+    opts = if Keyword.keyword?(opts), do: opts, else: []
+
+    error_payload =
+      %{
         "kind" => public_atom(error.kind, "request"),
         "outcome" => public_atom(error.outcome, "not_sent"),
         "code" => reason_code(error.reason),
         "message_id" => error.message_id
       }
+      |> put_request_id(Keyword.get(opts, :request_id))
+      |> put_monitor(Keyword.get(opts, :monitor))
+
+    encode(%{
+      "pulse" => "connection",
+      "version" => 1,
+      "type" => "error",
+      "error" => error_payload
     })
   end
 
-  def error(reason), do: error(Error.not_sent(:validation, reason))
+  def error(reason, opts) when is_list(opts), do: error(Error.not_sent(:validation, reason), opts)
 
   @doc false
   @spec command(binary()) ::
@@ -181,4 +192,20 @@ defmodule Spectre.Pulse.Phoenix.Frame do
   @spec public_atom(term(), String.t()) :: String.t()
   defp public_atom(value, _fallback) when is_atom(value), do: Atom.to_string(value)
   defp public_atom(_value, fallback), do: fallback
+
+  @spec put_request_id(map(), term()) :: map()
+  defp put_request_id(error, request_id)
+       when is_binary(request_id) and byte_size(request_id) <= 128 do
+    if String.valid?(request_id) and String.trim(request_id) != "",
+      do: Map.put(error, "request_id", request_id),
+      else: error
+  end
+
+  defp put_request_id(error, _request_id), do: error
+
+  @spec put_monitor(map(), term()) :: map()
+  defp put_monitor(error, monitor) when monitor in [:runtime, :operations],
+    do: Map.put(error, "monitor", Atom.to_string(monitor))
+
+  defp put_monitor(error, _monitor), do: error
 end

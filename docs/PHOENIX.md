@@ -40,6 +40,23 @@ The `:studio` value identifies a Pulse connection definition. The generated
 module implements `Phoenix.Socket.Transport`; it is not a Phoenix Channel and
 does not require topics or a Channel process per Agent.
 
+Pulse sends an RFC 6455 ping every 25 seconds by default. This keeps the
+connection active below Phoenix's default 60-second inbound-idle timeout and
+through reverse proxies that expire quiet WebSockets. Clients must answer with
+a pong; browsers do this automatically and Spectre Studio handles it explicitly.
+The trusted host can choose a shorter interval when its infrastructure has a
+tighter timeout:
+
+```elixir
+use Spectre.Pulse.Phoenix,
+  connection: :studio,
+  heartbeat_interval_ms: 15_000
+```
+
+The interval must be positive and no greater than 55 seconds. Keep it below the
+Endpoint WebSocket `:timeout`; increasing that timeout alone only postpones an
+idle disconnect and does not keep intermediate proxies alive.
+
 ## 2. Mount it on the Endpoint
 
 ```elixir
