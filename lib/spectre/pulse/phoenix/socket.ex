@@ -8,6 +8,7 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   alias Spectre.Pulse.Local
   alias Spectre.Pulse.Monitoring
   alias Spectre.Pulse.Phoenix.Frame
+  alias Spectre.Pulse.Studio
   alias Spectre.Pulse.Transports.WebSocket
 
   @default_heartbeat_interval_ms 25_000
@@ -224,12 +225,25 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   @spec handle_envelope(binary(), keyword(), t()) ::
           {:reply, :ok | :error, {:text, binary()}, t()}
   defp handle_envelope(frame, frame_opts, state) do
-    case WebSocket.handle_frame(frame, inbound_context(state, frame_opts), inbound_opts(state)) do
-      {:ok, result} ->
-        {:reply, :ok, {:text, Frame.receipt(result.receipt)}, touch(state)}
+    case Studio.handle_frame(frame, state.connection) do
+      {:ok, receipt, response_frame} ->
+        send(self(), {:spectre_pulse_frame, response_frame})
+        {:reply, :ok, {:text, Frame.receipt(receipt)}, touch(state)}
+
+      :not_studio ->
+        handle_agent_envelope(frame, frame_opts, state)
 
       {:error, %Error{} = error} ->
         error_reply(error, state)
+    end
+  end
+
+  @spec handle_agent_envelope(binary(), keyword(), t()) ::
+          {:reply, :ok | :error, {:text, binary()}, t()}
+  defp handle_agent_envelope(frame, frame_opts, state) do
+    case WebSocket.handle_frame(frame, inbound_context(state, frame_opts), inbound_opts(state)) do
+      {:ok, result} -> {:reply, :ok, {:text, Frame.receipt(result.receipt)}, touch(state)}
+      {:error, %Error{} = error} -> error_reply(error, state)
     end
   end
 

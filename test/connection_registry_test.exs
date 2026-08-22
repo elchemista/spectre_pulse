@@ -45,6 +45,7 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
   alias Spectre.Pulse.Phoenix.Socket
   alias Spectre.Pulse.Runtime
   alias Spectre.Pulse.RuntimeInfo
+  alias Spectre.Pulse.Studio
 
   alias __MODULE__.AgentOne
   alias __MODULE__.AgentTwo
@@ -325,6 +326,84 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
 
     assert pong_state.connection.last_seen_at >= heartbeat_state.connection.last_seen_at
     assert :ok = Socket.terminate(:closed, pong_state)
+  end
+
+  test "the Phoenix bridge serves scoped Studio inspection envelopes" do
+    configure_studio_connection()
+
+    transport_info = %{
+      endpoint: TestEndpoint,
+      transport: :websocket,
+      params: %{"token" => "private-token"},
+      connect_info: %{peer_data: %{address: {127, 0, 0, 1}}}
+    }
+
+    assert {:ok, pending} = Socket.connect(transport_info, connection: :studio_bridge)
+    assert {:ok, state} = Socket.init(pending)
+    assert_receive {:spectre_pulse_manifest, _connection_id}
+
+    request =
+      Envelope.new!(
+        from: "spectre://studio/operator-1",
+        to: "spectre://connections/agent-one",
+        act: :query,
+        payload: %{type: "studio.skills.list", data: %{}}
+      )
+
+    assert {:ok, request_frame} = JSON.encode(request, [])
+
+    assert {:reply, :ok, {:text, receipt_frame}, next_state} =
+             Socket.handle_in({request_frame, opcode: :text}, state)
+
+    assert %{"type" => "receipt", "receipt" => %{"message_id" => message_id}} =
+             Jason.decode!(receipt_frame)
+
+    assert message_id == request.id
+    assert_receive {:spectre_pulse_frame, response_frame}
+
+    assert {:ok, response} = JSON.decode(response_frame, [])
+    assert response.relates_to == request.id
+    assert response.payload.type == "studio.skills.list.result"
+    assert response.payload.data == %{"count" => 0, "skills" => []}
+
+    denied =
+      Envelope.new!(
+        from: "spectre://studio/operator-1",
+        to: "spectre://connections/agent-one",
+        act: :query,
+        payload: %{type: "studio.semantic_cache.examples", data: %{}}
+      )
+
+    assert {:ok, denied_frame} = JSON.encode(denied, [])
+
+    assert {:reply, :ok, {:text, _receipt}, final_state} =
+             Socket.handle_in({denied_frame, opcode: :text}, next_state)
+
+    assert_receive {:spectre_pulse_frame, error_frame}
+    assert {:ok, error_response} = JSON.decode(error_frame, [])
+    assert error_response.payload.type == "studio.semantic_cache.examples.error"
+    assert error_response.payload.data["kind"] == "authorization"
+    assert error_response.payload.data["code"] == "connection_scope_required"
+
+    reserved =
+      Envelope.new!(
+        from: "spectre://studio/operator-1",
+        to: "spectre://connections/agent-one",
+        act: :request,
+        payload: %{type: "studio.skill.mount", data: %{}}
+      )
+
+    assert {:ok, reserved_frame} = JSON.encode(reserved, [])
+
+    assert {:reply, :ok, {:text, _receipt}, terminal_state} =
+             Socket.handle_in({reserved_frame, opcode: :text}, final_state)
+
+    assert_receive {:spectre_pulse_frame, reserved_error_frame}
+    assert {:ok, reserved_error} = JSON.decode(reserved_error_frame, [])
+    assert reserved_error.payload.type == "studio.skill.mount.error"
+    assert reserved_error.payload.data["code"] == "skill_mount_requires_governed_morph"
+
+    assert :ok = Socket.terminate(:closed, terminal_state)
   end
 
   test "monitor enable failures retain their safe request correlation" do
@@ -642,6 +721,45 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
                [
                  [
                    id: :studio_monitoring,
+                   transport: :websocket,
+                   mode: :listen,
+                   agents: [AgentOne],
+                   authenticate: authenticator,
+                   authorize: authorizer,
+                   scopes: scopes
+                 ]
+               ],
+               descriptors()
+             )
+  end
+
+  defp configure_studio_connection do
+    scopes = ["spectre.skill.read"]
+
+    authenticator = fn credential, _context ->
+      if get_in(credential, [:params, "token"]) == "private-token" do
+        {:ok,
+         %{
+           id: "operator-1",
+           identity: "spectre://studio/operator-1",
+           kind: :studio,
+           scopes: scopes
+         }}
+      else
+        {:error, :invalid_token}
+      end
+    end
+
+    authorizer = fn _principal, _request -> {:ok, granted_scopes: scopes} end
+
+    assert "spectre.skill.read" in Studio.scopes()
+
+    assert :ok =
+             ConnectionRegistry.configure(
+               self(),
+               [
+                 [
+                   id: :studio_bridge,
                    transport: :websocket,
                    mode: :listen,
                    agents: [AgentOne],

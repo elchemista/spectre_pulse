@@ -15,6 +15,9 @@
   disclosure, and validate the integration with a real Phoenix application.
 - Keep Phoenix WebSockets alive with bounded server pings and preserve safe
   request correlation when a monitor enable fails before subscription creation.
+- Add a connection-terminated, explicitly scoped Studio bridge for semantic
+  cache review/promotion, persisted turn journals, Skill inventory and governed
+  Morph proposal evaluation.
 
 ## 0.3.0 — 2026-08-13
 
