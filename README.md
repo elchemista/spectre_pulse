@@ -20,7 +20,12 @@ Spectre Studio / remote Agent
         ├── granted scopes
         ├── Agent messages
         ├── OTP runtime subscriptions
-        └── Work and Vigil subscriptions
+        ├── Work and Vigil subscriptions
+        └── scoped Studio inspection
+              ├── semantic-cache review / promotion
+              ├── persisted turn journal
+              ├── Skill inventory
+              └── governed Morph proposals
               │
               ▼
     Spectre Agent Instances, operational loops, and OTP processes
@@ -34,12 +39,13 @@ Pulse owns the common technical boundary:
 - authenticated connection manifests and per-connection Agent exposure;
 - discovery and delivery through replaceable transports;
 - safe inbound validation and technical receipts;
-- scoped, temporary OTP and Work/Vigil monitoring for Studio.
+- scoped, temporary OTP and Work/Vigil monitoring for Studio;
+- bounded semantic-cache, turn-journal, Skill and Morph Studio operations.
 
 Pulse does not own Agent reasoning, memory, ledgers, semantic cache, tasks,
 workflows, journals, or application authorization policy. Those remain in
-Spectre and its extensions. Pulse only exposes safe calls and transports their
-results.
+Spectre and its extensions. Pulse exposes only bounded scoped projections and
+transports their results.
 
 ## Installation
 
@@ -94,7 +100,7 @@ children = [
          "agent.runtime.stream",
          "agent.operations.read",
          "agent.operations.stream"
-       ]
+       ] ++ Spectre.Pulse.Studio.scopes()
      ]
    ]},
   MyAppWeb.Endpoint
@@ -114,6 +120,11 @@ the connection, granted scopes, and exposed Agents. The same socket then accepts
 ordinary Pulse envelopes and Studio control calls. See the complete
 [Phoenix integration guide](docs/PHOENIX.md), including authentication, WSS,
 multiple Agent sets, and lifecycle behavior.
+
+Semantic cache, Journal/turns, Skills and Morph require explicit grants from
+both the principal and `authorize/2`. See
+[Studio inspection and governance](docs/STUDIO_INSPECTION.md) for the operation
+contract and its security boundaries.
 
 ## Define an Agent
 

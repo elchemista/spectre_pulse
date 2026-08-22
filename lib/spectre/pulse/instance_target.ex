@@ -19,14 +19,14 @@ defmodule Spectre.Pulse.InstanceTarget do
         }
 
   @type target :: module() | Spectre.AgentRef.t() | String.t()
-  @type error_context :: :runtime_info | :operations
+  @type error_context :: :runtime_info | :operations | :studio
 
   @doc false
   @spec resolve(target(), term(), term() | nil, atom(), String.t(), error_context()) ::
           {:ok, t()} | {:error, Error.t()}
   def resolve(target, subject, connection_id, registry, scope, error_context)
       when is_atom(registry) and is_binary(scope) and
-             error_context in [:runtime_info, :operations] do
+             error_context in [:runtime_info, :operations, :studio] do
     with {:ok, agent, address} <- authorize(target, connection_id, scope, error_context),
          {:ok, ref} <- instance_ref(agent, subject, error_context),
          {:ok, pid} <- lookup(ref, registry) do
@@ -163,4 +163,6 @@ defmodule Spectre.Pulse.InstanceTarget do
   defp invalid_reason(:runtime_info, :subject), do: :invalid_runtime_info_subject
   defp invalid_reason(:operations, :target), do: :invalid_operations_target
   defp invalid_reason(:operations, :subject), do: :invalid_operations_subject
+  defp invalid_reason(:studio, :target), do: :invalid_studio_target
+  defp invalid_reason(:studio, :subject), do: :invalid_studio_subject
 end
