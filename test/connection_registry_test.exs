@@ -293,6 +293,82 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
     assert {:stop, {:invalid_pulse_phoenix_state, :invalid}} = Socket.init(:invalid)
   end
 
+  test "the Phoenix bridge sends heartbeats before the transport idle timeout" do
+    configure_authenticated_connection()
+
+    transport_info = %{
+      endpoint: TestEndpoint,
+      transport: :websocket,
+      params: %{"token" => "private-token"},
+      connect_info: %{peer_data: %{address: {127, 0, 0, 1}}}
+    }
+
+    assert {:ok, pending} =
+             Socket.connect(transport_info,
+               connection: :studio,
+               heartbeat_interval_ms: 10
+             )
+
+    assert {:ok, state} = Socket.init(pending)
+    assert_receive {:spectre_pulse_manifest, connection_id}
+    assert_receive {:spectre_pulse_heartbeat, ^connection_id}, 100
+
+    assert {:push, {:ping, payload}, heartbeat_state} =
+             Socket.handle_info({:spectre_pulse_heartbeat, connection_id}, state)
+
+    assert is_binary(payload)
+    assert byte_size(payload) <= 125
+    assert heartbeat_state.heartbeat_ref != state.heartbeat_ref
+
+    assert {:ok, pong_state} =
+             Socket.handle_control({payload, [opcode: :pong]}, heartbeat_state)
+
+    assert pong_state.connection.last_seen_at >= heartbeat_state.connection.last_seen_at
+    assert :ok = Socket.terminate(:closed, pong_state)
+  end
+
+  test "monitor enable failures retain their safe request correlation" do
+    configure_monitoring_connection()
+
+    transport_info = %{
+      endpoint: TestEndpoint,
+      transport: :websocket,
+      params: %{"token" => "private-token"},
+      connect_info: %{peer_data: %{address: {127, 0, 0, 1}}}
+    }
+
+    assert {:ok, pending} = Socket.connect(transport_info, connection: :studio_monitoring)
+    assert {:ok, state} = Socket.init(pending)
+    assert_receive {:spectre_pulse_manifest, _connection_id}
+
+    enable =
+      Jason.encode!(%{
+        "pulse" => "connection",
+        "version" => 1,
+        "type" => "agent.runtime.monitor.enable",
+        "request_id" => "missing-instance-panel",
+        "agent_address" => "spectre://connections/agent-one",
+        "subject" => "missing-#{System.unique_integer([:positive])}",
+        "interval_ms" => 1_000
+      })
+
+    assert {:reply, :error, {:text, error_frame}, state} =
+             Socket.handle_in({enable, opcode: :text}, state)
+
+    assert {:ok,
+            %{
+              "type" => "error",
+              "error" => %{
+                "kind" => "routing",
+                "code" => "instance_not_found",
+                "monitor" => "runtime",
+                "request_id" => "missing-instance-panel"
+              }
+            }} = Jason.decode(error_frame)
+
+    assert :ok = Socket.terminate(:closed, state)
+  end
+
   test "the Phoenix boundary keeps credentials out of authorization and public errors" do
     test_pid = self()
 
@@ -352,6 +428,25 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
                connection: :studio,
                inbound: :invalid
              )
+
+    assert {:error, :invalid_pulse_phoenix_options} =
+             Socket.connect(transport_info,
+               connection: :studio,
+               heartbeat_interval_ms: 0
+             )
+
+    assert {:error, :invalid_pulse_phoenix_options} =
+             Socket.connect(transport_info,
+               connection: :studio,
+               heartbeat_interval_ms: 55_001
+             )
+
+    oversized_request_id = String.duplicate("x", 129)
+    encoded = Frame.error(error, monitor: :runtime, request_id: oversized_request_id)
+
+    assert {:ok, %{"error" => safe_error}} = Jason.decode(encoded)
+    assert safe_error["monitor"] == "runtime"
+    refute Map.has_key?(safe_error, "request_id")
   end
 
   test "Studio enables and disables live monitoring through Phoenix at runtime" do

@@ -162,6 +162,12 @@ subscription and treat sequence gaps as observation gaps.
 `dropped_updates` reports samples coalesced while the socket sink was under
 backpressure. Sampling never overlaps for one subscription.
 
+An enable failure before the first snapshot uses the safe connection error
+frame. A valid caller correlation is preserved as `error.request_id`, together
+with `error.monitor: "operations"`; no subscription id is allocated. Studio
+should use that correlation to end the pending state and show the returned
+kind/code.
+
 ## Disable, expiry, and errors
 
 When the panel closes, send:

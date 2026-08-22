@@ -13,6 +13,8 @@
   near-realtime Studio subscriptions backed by Spectre 0.3.2 operation views.
 - Target Spectre 0.3.2, harden Phoenix error frames against internal-data
   disclosure, and validate the integration with a real Phoenix application.
+- Keep Phoenix WebSockets alive with bounded server pings and preserve safe
+  request correlation when a monitor enable fails before subscription creation.
 
 ## 0.3.0 — 2026-08-13
 
