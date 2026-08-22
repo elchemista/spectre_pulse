@@ -448,6 +448,50 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
     assert :ok = Socket.terminate(:closed, state)
   end
 
+  test "Studio discovers active Instance subjects through an authorized control frame" do
+    configure_monitoring_connection()
+    subject = "discovered-#{System.unique_integer([:positive])}"
+    assert {:ok, instance} = Spectre.summon(agent: AgentOne, subject: subject)
+
+    on_exit(fn ->
+      if Process.alive?(instance), do: Process.exit(instance, :kill)
+    end)
+
+    transport_info = %{
+      endpoint: TestEndpoint,
+      transport: :websocket,
+      params: %{"token" => "private-token"},
+      connect_info: %{peer_data: %{address: {127, 0, 0, 1}}}
+    }
+
+    assert {:ok, pending} = Socket.connect(transport_info, connection: :studio_monitoring)
+    assert {:ok, state} = Socket.init(pending)
+    assert_receive {:spectre_pulse_manifest, _connection_id}
+
+    request =
+      Jason.encode!(%{
+        "pulse" => "connection",
+        "version" => 1,
+        "type" => "agent.instances.list",
+        "request_id" => "instances-panel",
+        "agent_address" => "spectre://connections/agent-one"
+      })
+
+    assert {:reply, :ok, {:text, response}, state} =
+             Socket.handle_in({request, opcode: :text}, state)
+
+    assert {:ok,
+            %{
+              "type" => "agent.instances.list.result",
+              "request_id" => "instances-panel",
+              "agent_address" => "spectre://connections/agent-one",
+              "instances" => instances
+            }} = Jason.decode(response)
+
+    assert Enum.any?(instances, &(&1["subject"] == subject and &1["alive"] == true))
+    assert :ok = Socket.terminate(:closed, state)
+  end
+
   test "the Phoenix boundary keeps credentials out of authorization and public errors" do
     test_pid = self()
 

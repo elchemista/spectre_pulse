@@ -5,6 +5,7 @@ defmodule Spectre.Pulse.Phoenix.Socket do
   alias Spectre.Pulse.ConnectionRegistry
   alias Spectre.Pulse.Error
   alias Spectre.Pulse.Handshake
+  alias Spectre.Pulse.Instances
   alias Spectre.Pulse.Local
   alias Spectre.Pulse.Monitoring
   alias Spectre.Pulse.Phoenix.Frame
@@ -251,7 +252,8 @@ defmodule Spectre.Pulse.Phoenix.Socket do
           {:monitor_enable, map()}
           | {:monitor_disable, term()}
           | {:operations_monitor_enable, map()}
-          | {:operations_monitor_disable, term()},
+          | {:operations_monitor_disable, term()}
+          | {:instances_list, map()},
           t()
         ) ::
           {:reply, :ok | :error, {:text, binary()}, t()}
@@ -275,6 +277,19 @@ defmodule Spectre.Pulse.Phoenix.Socket do
 
   defp handle_command({:operations_monitor_disable, subscription_id}, state) do
     monitoring_reply(Monitoring.disable_operations(state.monitoring, subscription_id), state)
+  end
+
+  defp handle_command({:instances_list, attrs}, state) do
+    request_id = Map.get(attrs, "request_id")
+    agent_address = Map.get(attrs, "agent_address")
+
+    case Instances.list(agent_address, state.connection.id) do
+      {:ok, result} ->
+        {:reply, :ok, {:text, Frame.instances(request_id, agent_address, result)}, touch(state)}
+
+      {:error, %Error{} = error} ->
+        error_reply(error, state, request_id: request_id)
+    end
   end
 
   @spec monitoring_reply({:ok, map()} | {:error, Error.t()}, t(), keyword()) ::

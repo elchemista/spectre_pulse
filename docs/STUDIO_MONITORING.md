@@ -58,6 +58,28 @@ A remote monitoring connection needs both scopes:
 | `agent.runtime.read` | Read one bounded runtime snapshot |
 | `agent.runtime.stream` | Maintain a repeating subscription |
 
+The same `agent.runtime.read` scope also gates bounded discovery of live Instance
+subjects through `agent.instances.list`. Without that grant Studio cannot list
+subjects or auto-select an Instance. Discovery is additionally restricted to the
+Agent selectors in the connection spec; an unexposed Agent is never enumerable.
+
+Access is deliberately composable per connection:
+
+| Scope | What Studio may expose |
+| --- | --- |
+| `agent.runtime.read` | Live Instance subjects and one bounded OTP snapshot |
+| `agent.runtime.stream` | Repeating OTP snapshots (also requires runtime read) |
+| `agent.operations.read` | One bounded Work/Vigil view |
+| `agent.operations.stream` | Repeating Work/Vigil views |
+| `ledger.read` | Persisted Journal turns |
+| `agent.semantic_cache.read` | Semantic-cache review candidates |
+| `spectre.skill.read` | Skill inventory |
+| `spectre.morph.propose` | Governed Morph proposals |
+
+Omit a scope from the Pulse connection spec to remove that surface. The host
+enforces the grant on every request; Studio's locked tab is only the UI projection
+of that server-side decision.
+
 The connection must also expose the selected Agent. Pulse obtains the
 connection id from trusted adapter state, never from a client-controlled frame.
 

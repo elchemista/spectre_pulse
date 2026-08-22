@@ -12,11 +12,13 @@ defmodule Spectre.Pulse.Phoenix.Frame do
   @monitor_disable "agent.runtime.monitor.disable"
   @operations_monitor_enable "agent.operations.monitor.enable"
   @operations_monitor_disable "agent.operations.monitor.disable"
+  @instances_list "agent.instances.list"
   @monitor_commands [
     @monitor_enable,
     @monitor_disable,
     @operations_monitor_enable,
-    @operations_monitor_disable
+    @operations_monitor_disable,
+    @instances_list
   ]
 
   @doc false
@@ -79,7 +81,8 @@ defmodule Spectre.Pulse.Phoenix.Frame do
              {:monitor_enable, map()}
              | {:monitor_disable, term()}
              | {:operations_monitor_enable, map()}
-             | {:operations_monitor_disable, term()}}
+             | {:operations_monitor_disable, term()}
+             | {:instances_list, map()}}
           | {:error, Error.t()}
   def command(frame) when is_binary(frame) do
     case Jason.decode(frame) do
@@ -102,6 +105,20 @@ defmodule Spectre.Pulse.Phoenix.Frame do
   end
 
   @doc false
+  @spec instances(String.t(), String.t(), map()) :: binary()
+  def instances(request_id, agent_address, result) do
+    result
+    |> Map.merge(%{
+      "pulse" => "connection",
+      "version" => 1,
+      "type" => "agent.instances.list.result",
+      "request_id" => request_id,
+      "agent_address" => agent_address
+    })
+    |> encode()
+  end
+
+  @doc false
   @spec metadata(term()) :: map()
   def metadata(opts) when is_list(opts) and opts != [] do
     if Keyword.keyword?(opts), do: opcode_metadata(opts), else: %{}
@@ -114,7 +131,8 @@ defmodule Spectre.Pulse.Phoenix.Frame do
            {:monitor_enable, map()}
            | {:monitor_disable, term()}
            | {:operations_monitor_enable, map()}
-           | {:operations_monitor_disable, term()}}
+           | {:operations_monitor_disable, term()}
+           | {:instances_list, map()}}
           | {:error, Error.t()}
   defp monitoring_command(@monitor_enable, %{"version" => 1} = value),
     do: {:ok, {:monitor_enable, value}}
@@ -127,6 +145,14 @@ defmodule Spectre.Pulse.Phoenix.Frame do
 
   defp monitoring_command(@operations_monitor_disable, %{"version" => 1} = value),
     do: {:ok, {:operations_monitor_disable, Map.get(value, "subscription_id")}}
+
+  defp monitoring_command(
+         @instances_list,
+         %{"version" => 1, "request_id" => request_id, "agent_address" => agent_address} = value
+       )
+       when is_binary(request_id) and request_id != "" and is_binary(agent_address) and
+              agent_address != "",
+       do: {:ok, {:instances_list, value}}
 
   defp monitoring_command(_type, _value),
     do: {:error, Error.not_sent(:validation, :unsupported_connection_protocol_version)}
