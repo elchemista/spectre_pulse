@@ -18,7 +18,7 @@ defmodule Spectre.Pulse.Stack do
       id: :pulse,
       version: @version,
       contract: 1,
-      spectre: "~> 0.3.2",
+      spectre: "~> 0.3.3",
       provides: [{:contract, {:pulse, 1}}, {:service, :pulse}],
       requires: [],
       conflicts: [],
