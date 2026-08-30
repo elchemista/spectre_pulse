@@ -20,6 +20,8 @@
   Morph proposal evaluation.
 - Add a separately scoped semantic-cache update operation that edits mutable
   online rows and resolves labels only from the Agent's cacheable rules.
+- Project every requested semantic-cache source with bounded paging, source
+  inventory and searchability metadata so hosts do not need transport rewrites.
 - Align the package, Stack metadata and compatibility documentation with
   Spectre 0.3.4 and refresh all compatible dependencies.
 

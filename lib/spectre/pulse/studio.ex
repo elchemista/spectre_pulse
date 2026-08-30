@@ -45,7 +45,8 @@ defmodule Spectre.Pulse.Studio do
 
   @reserved_operations [@skill_mount]
 
-  @max_cache_examples 100
+  @default_cache_examples 5_000
+  @max_cache_examples 5_000
   @max_turns 100
   @max_text_graphemes 8_000
 
@@ -152,15 +153,37 @@ defmodule Spectre.Pulse.Studio do
 
   @spec execute(String.t(), module(), term(), Connection.t()) ::
           {:ok, map()} | {:error, term()}
-  defp execute(@cache_examples, agent, _data, _connection) do
-    with {:ok, examples} <- SemanticCache.examples(agent) do
+  defp execute(@cache_examples, agent, data, _connection) when is_map(data) do
+    with {:ok, source} <- cache_source(Map.get(data, "source", "online_learned")),
+         {:ok, rows} <- SemanticCache.examples(agent, source: source) do
+      rows = Enum.sort_by(rows, &cache_sort_key/1)
+      offset = bounded_offset(Map.get(data, "offset"))
+      limit = bounded_limit(Map.get(data, "limit"), @max_cache_examples)
+      examples = rows |> Enum.drop(offset) |> Enum.take(limit)
+      next_offset = if offset + length(examples) < length(rows), do: offset + length(examples)
+      inventory = cache_inventory(rows)
+
       {:ok,
        %{
-         "examples" => examples |> Enum.take(@max_cache_examples) |> Enum.map(&cache_row/1),
-         "labels" => cache_labels(agent)
+         "examples" => Enum.map(examples, &cache_row/1),
+         "labels" => cache_labels(agent),
+         "count" => length(examples),
+         "total" => length(rows),
+         "offset" => offset,
+         "limit" => limit,
+         "next_offset" => next_offset,
+         "truncated?" => not is_nil(next_offset),
+         "source" => wire_value(source),
+         "source_counts" => inventory.source_counts,
+         "searchable_count" => inventory.searchable,
+         "exact_only_count" => length(rows) - inventory.searchable,
+         "fully_searchable?" => inventory.searchable == length(rows)
        }}
     end
   end
+
+  defp execute(@cache_examples, _agent, _data, _connection),
+    do: {:error, :invalid_cache_examples_request}
 
   defp execute(@cache_update, agent, %{"example_id" => id} = data, _connection)
        when is_binary(id) and id != "" do
@@ -309,6 +332,9 @@ defmodule Spectre.Pulse.Studio do
 
   @spec cache_row(map()) :: map()
   defp cache_row(row) do
+    embedding = Map.get(row, :embedding, Map.get(row, "embedding"))
+    searchable? = is_list(embedding) and embedding != []
+
     %{
       "id" => wire_value(Map.get(row, :id, Map.get(row, "id"))),
       "text" => bounded_text(Map.get(row, :text, Map.get(row, "text"))),
@@ -317,9 +343,61 @@ defmodule Spectre.Pulse.Studio do
       "confidence" => Map.get(row, :confidence, Map.get(row, "confidence")),
       "verified?" => Map.get(row, :verified?, Map.get(row, "verified?", false)),
       "editable?" => Map.get(row, :editable?, Map.get(row, "editable?", false)),
+      "searchable?" => searchable?,
+      "embedding_dimensions" => if(searchable?, do: length(embedding), else: nil),
       "inserted_at" => wire_value(Map.get(row, :inserted_at, Map.get(row, "inserted_at"))),
       "updated_at" => wire_value(Map.get(row, :updated_at, Map.get(row, "updated_at")))
     }
+  end
+
+  @spec cache_source(term()) :: {:ok, atom()} | {:error, term()}
+  defp cache_source("all"), do: {:ok, :all}
+  defp cache_source("online_learned"), do: {:ok, :online_learned}
+  defp cache_source("offline_dataset"), do: {:ok, :offline_dataset}
+  defp cache_source("static_route_example"), do: {:ok, :static_route_example}
+
+  defp cache_source(source)
+       when source in [:all, :online_learned, :offline_dataset, :static_route_example],
+       do: {:ok, source}
+
+  defp cache_source(_source), do: {:error, :invalid_semantic_cache_source}
+
+  @spec bounded_offset(term()) :: non_neg_integer()
+  defp bounded_offset(value) when is_integer(value) and value >= 0, do: value
+  defp bounded_offset(_value), do: 0
+
+  @spec cache_sort_key(map()) :: tuple()
+  defp cache_sort_key(row) do
+    {
+      cache_source_rank(Map.get(row, :source, Map.get(row, "source"))),
+      wire_value(Map.get(row, :label, Map.get(row, "label"))),
+      row |> Map.get(:text, Map.get(row, "text", "")) |> String.downcase(),
+      wire_value(Map.get(row, :id, Map.get(row, "id")))
+    }
+  end
+
+  defp cache_source_rank(:online_learned), do: 0
+  defp cache_source_rank("online_learned"), do: 0
+  defp cache_source_rank(:offline_dataset), do: 1
+  defp cache_source_rank("offline_dataset"), do: 1
+  defp cache_source_rank(:static_route_example), do: 2
+  defp cache_source_rank("static_route_example"), do: 2
+  defp cache_source_rank(_source), do: 3
+
+  @spec cache_inventory([map()]) :: map()
+  defp cache_inventory(rows) do
+    %{
+      searchable: Enum.count(rows, &cache_searchable?/1),
+      source_counts:
+        Map.new(Enum.frequencies_by(rows, &Map.get(&1, :source, Map.get(&1, "source"))), fn
+          {source, count} -> {wire_value(source), count}
+        end)
+    }
+  end
+
+  defp cache_searchable?(row) do
+    embedding = Map.get(row, :embedding, Map.get(row, "embedding"))
+    is_list(embedding) and embedding != []
   end
 
   @spec cache_update_attrs(module(), map()) :: {:ok, map()} | {:error, term()}
@@ -432,6 +510,7 @@ defmodule Spectre.Pulse.Studio do
 
   @spec bounded_limit(term(), pos_integer()) :: pos_integer()
   defp bounded_limit(value, maximum) when is_integer(value) and value > 0, do: min(value, maximum)
+  defp bounded_limit(_value, @max_cache_examples), do: @default_cache_examples
   defp bounded_limit(_value, maximum), do: maximum
 
   @spec bounded_text(term()) :: String.t() | nil

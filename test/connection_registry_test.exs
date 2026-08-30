@@ -445,11 +445,27 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
     assert_receive {:spectre_pulse_manifest, _connection_id}
 
     {state, examples_response} =
-      studio_request(state, :query, "studio.semantic_cache.examples", %{})
+      studio_request(state, :query, "studio.semantic_cache.examples", %{
+        "source" => "all",
+        "limit" => 5_000
+      })
 
     assert examples_response.payload.type == "studio.semantic_cache.examples.result"
-    assert "cache_alpha" in examples_response.payload.data["labels"]
-    assert "cache_beta" in examples_response.payload.data["labels"]
+    examples_data = examples_response.payload.data
+    assert "cache_alpha" in examples_data["labels"]
+    assert "cache_beta" in examples_data["labels"]
+    assert examples_data["source"] == "all"
+    assert examples_data["count"] == length(examples_data["examples"])
+    assert examples_data["total"] >= examples_data["count"]
+    assert examples_data["source_counts"]["online_learned"] == 1
+
+    assert %{
+             "searchable?" => searchable?,
+             "embedding_dimensions" => dimensions
+           } = Enum.find(examples_data["examples"], &(&1["id"] == row.id))
+
+    assert is_boolean(searchable?)
+    assert is_nil(dimensions) or is_integer(dimensions)
 
     {state, update_response} =
       studio_request(state, :request, "studio.semantic_cache.update", %{
