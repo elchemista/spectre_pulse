@@ -13,6 +13,16 @@ defmodule Spectre.Pulse.ConnectionRegistryTest.AgentOne do
     end
   end
 
+  flow :studio_cache do
+    on :cache_alpha, regex: ~r/^cache alpha$/ do
+      run(:ping)
+    end
+
+    on :cache_beta, regex: ~r/^cache beta$/ do
+      run(:ping)
+    end
+  end
+
   @doc false
   @spec ping(Spectre.Input.t(), Spectre.Context.t()) :: String.t()
   def ping(_input, _context), do: "pong"
@@ -46,6 +56,7 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
   alias Spectre.Pulse.Runtime
   alias Spectre.Pulse.RuntimeInfo
   alias Spectre.Pulse.Studio
+  alias Spectre.Router.SemanticCache
 
   alias __MODULE__.AgentOne
   alias __MODULE__.AgentTwo
@@ -404,6 +415,68 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
     assert reserved_error.payload.data["code"] == "skill_mount_requires_governed_morph"
 
     assert :ok = Socket.terminate(:closed, terminal_state)
+  end
+
+  test "the Phoenix bridge edits mutable cache rows under its dedicated scope" do
+    configure_studio_connection([
+      "agent.semantic_cache.read",
+      "agent.semantic_cache.write"
+    ])
+
+    :ok = SemanticCache.clear(AgentOne)
+    on_exit(fn -> SemanticCache.clear(AgentOne) end)
+
+    assert {:ok, row} =
+             SemanticCache.put(
+               "draft cache category",
+               %{label: :cache_alpha, verified?: false},
+               spectre_agent: AgentOne
+             )
+
+    transport_info = %{
+      endpoint: TestEndpoint,
+      transport: :websocket,
+      params: %{"token" => "private-token"},
+      connect_info: %{peer_data: %{address: {127, 0, 0, 1}}}
+    }
+
+    assert {:ok, pending} = Socket.connect(transport_info, connection: :studio_bridge)
+    assert {:ok, state} = Socket.init(pending)
+    assert_receive {:spectre_pulse_manifest, _connection_id}
+
+    {state, examples_response} =
+      studio_request(state, :query, "studio.semantic_cache.examples", %{})
+
+    assert examples_response.payload.type == "studio.semantic_cache.examples.result"
+    assert "cache_alpha" in examples_response.payload.data["labels"]
+    assert "cache_beta" in examples_response.payload.data["labels"]
+
+    {state, update_response} =
+      studio_request(state, :request, "studio.semantic_cache.update", %{
+        "example_id" => row.id,
+        "label" => "cache_beta",
+        "text" => "edited cache phrase"
+      })
+
+    assert update_response.payload.type == "studio.semantic_cache.update.result"
+    assert update_response.payload.data["example"]["label"] == "cache_beta"
+    assert update_response.payload.data["example"]["text"] == "edited cache phrase"
+
+    assert {:ok, updated} = SemanticCache.get_example(AgentOne, row.id)
+    assert updated.label == :cache_beta
+    assert updated.text == "edited cache phrase"
+    refute updated.verified?
+
+    {_state, rejected_response} =
+      studio_request(state, :request, "studio.semantic_cache.update", %{
+        "example_id" => row.id,
+        "label" => "not-a-real-agent-label"
+      })
+
+    assert rejected_response.payload.type == "studio.semantic_cache.update.error"
+    assert rejected_response.payload.data["code"] == "unknown_label"
+
+    assert :ok = Socket.terminate(:closed, state)
   end
 
   test "monitor enable failures retain their safe request correlation" do
@@ -777,9 +850,7 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
              )
   end
 
-  defp configure_studio_connection do
-    scopes = ["spectre.skill.read"]
-
+  defp configure_studio_connection(scopes \\ ["spectre.skill.read"]) do
     authenticator = fn credential, _context ->
       if get_in(credential, [:params, "token"]) == "private-token" do
         {:ok,
@@ -814,6 +885,30 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
                ],
                descriptors()
              )
+  end
+
+  defp studio_request(state, act, type, data) do
+    request =
+      Envelope.new!(
+        from: "spectre://studio/operator-1",
+        to: "spectre://connections/agent-one",
+        act: act,
+        payload: %{type: type, data: data}
+      )
+
+    assert {:ok, frame} = JSON.encode(request, [])
+
+    assert {:reply, :ok, {:text, receipt_frame}, next_state} =
+             Socket.handle_in({frame, opcode: :text}, state)
+
+    assert %{"type" => "receipt", "receipt" => %{"message_id" => message_id}} =
+             Jason.decode!(receipt_frame)
+
+    assert message_id == request.id
+    assert_receive {:spectre_pulse_frame, response_frame}
+    assert {:ok, response} = JSON.decode(response_frame, [])
+    assert response.relates_to == request.id
+    {next_state, response}
   end
 
   defp descriptors, do: [descriptor(AgentOne), descriptor(AgentTwo)]

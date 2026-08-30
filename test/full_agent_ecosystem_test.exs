@@ -324,8 +324,8 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest.Agent do
     on :inspect_release, regex: ~r/^inspect release$/i do
       action({:lens, :look},
         args: %{
-          url: "https://release.test/status",
-          opts: [include: [:markdown, :links]]
+          "url" => "https://release.test/status",
+          "opts" => %{"include" => ["markdown", "links"]}
         },
         mode: :read
       )
@@ -413,7 +413,7 @@ defmodule Spectre.Pulse.FullAgentEcosystemTest do
            end) == [
              prism: "0.1.0",
              kinetic: "0.1.0",
-             mnemonic: "0.1.0",
+             mnemonic: "0.2.0",
              directive: "0.1.0",
              lens: "0.1.0",
              beam: "0.1.0",

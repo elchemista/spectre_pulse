@@ -1,7 +1,7 @@
 # Spectre Studio Work and Vigil monitoring
 
 Pulse exposes the committed, read-only Work and Vigil views already provided by
-Spectre 0.3.3. Studio can read one snapshot or open a temporary near-realtime
+Spectre 0.3.4. Studio can read one snapshot or open a temporary near-realtime
 subscription while an operator watches an Agent Instance.
 
 This capability is separate from OTP runtime monitoring:

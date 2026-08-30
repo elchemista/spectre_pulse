@@ -127,7 +127,23 @@ defmodule Spectre.Pulse.EcosystemStackIntegrationTest do
     assert Enum.map(agent_definition.extensions, & &1.id) ==
              [:prism, :kinetic, :mnemonic, :directive, :lens, :beam, :pulse]
 
-    assert {:ok, [lens_runtime]} = Runtime.child_specs(Stack)
+    assert {:ok, child_specs} = Runtime.child_specs(Stack)
+    assert length(child_specs) == 2
+
+    mnemonic_runtime = Enum.find(child_specs, &(elem(&1.start, 0) == SpectreMnemonic.Engine))
+    lens_runtime = Enum.find(child_specs, &(elem(&1.start, 0) == SpectreLens.Runtime))
+
+    assert %{start: {SpectreMnemonic.Engine, :start_link, [mnemonic_opts]}} = mnemonic_runtime
+
+    assert [
+             [
+               id: :spectre_stack,
+               adapter: Adapters.MemoryStore,
+               role: :primary,
+               opts: []
+             ]
+           ] = get_in(mnemonic_opts, [:persistent_memory, :stores])
+
     assert {SpectreLens.Runtime, :start_link, [[backend: Adapters.Browser]]} = lens_runtime.start
 
     for {service, package} <- [

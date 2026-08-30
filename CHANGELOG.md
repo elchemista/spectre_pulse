@@ -18,6 +18,10 @@
 - Add a connection-terminated, explicitly scoped Studio bridge for semantic
   cache review/promotion, persisted turn journals, Skill inventory and governed
   Morph proposal evaluation.
+- Add a separately scoped semantic-cache update operation that edits mutable
+  online rows and resolves labels only from the Agent's cacheable rules.
+- Align the package, Stack metadata and compatibility documentation with
+  Spectre 0.3.4 and refresh all compatible dependencies.
 
 ## 0.3.0 — 2026-08-13
 

@@ -49,12 +49,12 @@ transports their results.
 
 ## Installation
 
-Pulse targets Spectre `0.3.3` and Elixir 1.19 or later:
+Pulse targets Spectre `0.3.4` and Elixir 1.19 or later:
 
 ```elixir
 def deps do
   [
-    {:spectre, "~> 0.3.3"},
+    {:spectre, "~> 0.3.4"},
     {:spectre_pulse, github: "elchemista/spectre_pulse", branch: "main"}
   ]
 end

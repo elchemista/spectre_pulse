@@ -9,6 +9,7 @@ enter an Agent turn, prompt, or application flow.
 | Payload | Required scope | Result |
 | --- | --- | --- |
 | `studio.semantic_cache.examples` | `agent.semantic_cache.read` | Up to 100 bounded cache examples |
+| `studio.semantic_cache.update` | `agent.semantic_cache.write` | The edited online cache example |
 | `studio.semantic_cache.verify` | `agent.semantic_cache.promote` | The verified/promoted example |
 | `studio.journal.turns` | `ledger.read` | Up to 100 persisted compact chat turns |
 | `studio.skills.list` | `spectre.skill.read` | The Agent Definition's Skill mounts |
@@ -62,6 +63,9 @@ means the host descriptor did not advertise any capabilities.
 
 - Semantic cache access uses the Agent's configured cache adapter and never
   copies the cache into Pulse.
+- Semantic cache updates accept only existing cacheable Agent labels. Pulse
+  resolves the submitted label against the Agent rules without creating atoms;
+  static dataset and route-example rows remain read-only.
 - Journal turns are the compact `state.data[:chat_history]` persisted through
   the Agent's state adapter. They are not the connection event log, a raw state
   dump, or a full audit ledger.

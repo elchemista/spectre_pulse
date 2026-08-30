@@ -73,6 +73,7 @@ Access is deliberately composable per connection:
 | `agent.operations.stream` | Repeating Work/Vigil views |
 | `ledger.read` | Persisted Journal turns |
 | `agent.semantic_cache.read` | Semantic-cache review candidates |
+| `agent.semantic_cache.write` | Edit mutable online semantic-cache rows |
 | `spectre.skill.read` | Skill inventory |
 | `spectre.morph.propose` | Governed Morph proposals |
 

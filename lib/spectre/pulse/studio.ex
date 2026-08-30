@@ -23,9 +23,11 @@ defmodule Spectre.Pulse.Studio do
   alias Spectre.Pulse.InstanceTarget
   alias Spectre.Pulse.Receipt
   alias Spectre.Router.SemanticCache
+  alias Spectre.Router.SemanticCache.Learned.Rows
   alias Spectre.Runtime.Persistence
 
   @cache_examples "studio.semantic_cache.examples"
+  @cache_update "studio.semantic_cache.update"
   @cache_verify "studio.semantic_cache.verify"
   @journal_turns "studio.journal.turns"
   @skills_list "studio.skills.list"
@@ -34,6 +36,7 @@ defmodule Spectre.Pulse.Studio do
 
   @operations %{
     @cache_examples => "agent.semantic_cache.read",
+    @cache_update => "agent.semantic_cache.write",
     @cache_verify => "agent.semantic_cache.promote",
     @journal_turns => "ledger.read",
     @skills_list => "spectre.skill.read",
@@ -151,9 +154,24 @@ defmodule Spectre.Pulse.Studio do
           {:ok, map()} | {:error, term()}
   defp execute(@cache_examples, agent, _data, _connection) do
     with {:ok, examples} <- SemanticCache.examples(agent) do
-      {:ok, %{"examples" => examples |> Enum.take(@max_cache_examples) |> Enum.map(&cache_row/1)}}
+      {:ok,
+       %{
+         "examples" => examples |> Enum.take(@max_cache_examples) |> Enum.map(&cache_row/1),
+         "labels" => cache_labels(agent)
+       }}
     end
   end
+
+  defp execute(@cache_update, agent, %{"example_id" => id} = data, _connection)
+       when is_binary(id) and id != "" do
+    with {:ok, attrs} <- cache_update_attrs(agent, data),
+         {:ok, example} <- SemanticCache.update_example(agent, id, attrs) do
+      {:ok, %{"example" => cache_row(example)}}
+    end
+  end
+
+  defp execute(@cache_update, _agent, _data, _connection),
+    do: {:error, :invalid_cache_update}
 
   defp execute(@cache_verify, agent, %{"example_id" => id}, _connection)
        when is_binary(id) and id != "" do
@@ -303,6 +321,78 @@ defmodule Spectre.Pulse.Studio do
       "updated_at" => wire_value(Map.get(row, :updated_at, Map.get(row, "updated_at")))
     }
   end
+
+  @spec cache_update_attrs(module(), map()) :: {:ok, map()} | {:error, term()}
+  defp cache_update_attrs(agent, data) do
+    with {:ok, text} <- optional_cache_text(data),
+         {:ok, label} <- optional_cache_label(agent, data) do
+      attrs = %{} |> put_update_attr(:text, text) |> put_update_attr(:label, label)
+
+      if map_size(attrs) > 0,
+        do: {:ok, attrs},
+        else: {:error, :empty_cache_update}
+    end
+  end
+
+  @spec optional_cache_text(map()) :: {:ok, String.t() | nil} | {:error, term()}
+  defp optional_cache_text(data) do
+    if Map.has_key?(data, "text") do
+      validate_cache_text(Map.get(data, "text"))
+    else
+      {:ok, nil}
+    end
+  end
+
+  defp validate_cache_text(value) when is_binary(value) do
+    value = String.trim(value)
+
+    cond do
+      value == "" -> {:error, :blank_cache_text}
+      String.length(value) > @max_text_graphemes -> {:error, :cache_text_too_long}
+      true -> {:ok, value}
+    end
+  end
+
+  defp validate_cache_text(_value), do: {:error, :invalid_cache_text}
+
+  @spec optional_cache_label(module(), map()) :: {:ok, atom() | nil} | {:error, term()}
+  defp optional_cache_label(agent, data) do
+    if Map.has_key?(data, "label") do
+      resolve_cache_label(agent, Map.get(data, "label"))
+    else
+      {:ok, nil}
+    end
+  end
+
+  defp resolve_cache_label(agent, value) when is_binary(value) do
+    case Rows.route_label(String.trim(value), cacheable_rules(agent)) do
+      nil -> {:error, {:unknown_label, value}}
+      label -> {:ok, label}
+    end
+  end
+
+  defp resolve_cache_label(_agent, _value), do: {:error, :invalid_cache_label}
+
+  @spec cache_labels(module()) :: [String.t()]
+  defp cache_labels(agent) do
+    agent
+    |> cacheable_rules()
+    |> Enum.map(&Atom.to_string(&1.label))
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
+  @spec cacheable_rules(module()) :: [Spectre.Rule.t()]
+  defp cacheable_rules(agent) do
+    agent.__spectre_router__()
+    |> Keyword.put_new(:spectre_agent, agent)
+    |> Keyword.put_new(:spectre_rules, agent.__spectre_rules__())
+    |> Rows.cacheable_rules()
+  end
+
+  @spec put_update_attr(map(), atom(), term()) :: map()
+  defp put_update_attr(attrs, _key, nil), do: attrs
+  defp put_update_attr(attrs, key, value), do: Map.put(attrs, key, value)
 
   @spec turn(term()) :: map()
   defp turn(entry) when is_map(entry) do
