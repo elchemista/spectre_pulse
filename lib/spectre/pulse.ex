@@ -42,6 +42,9 @@ defmodule Spectre.Pulse do
   @impl Spectre.Stack.Installable
   def compile(opts, block, caller), do: StackAdapter.compile(opts, block, caller)
 
+  @impl Spectre.Stack.Installable
+  def tools(config), do: Spectre.Pulse.ServerTool.tools(config)
+
   @doc """
   Starts the host Pulse runtime.
 

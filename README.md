@@ -54,7 +54,7 @@ Pulse targets Spectre `0.3.4` and Elixir 1.19 or later:
 ```elixir
 def deps do
   [
-    {:spectre, "~> 0.3.4"},
+    {:spectre, "~> 0.4.0"},
     {:spectre_pulse, github: "elchemista/spectre_pulse", branch: "main"}
   ]
 end
@@ -288,3 +288,29 @@ The transport-independent protocol description is also available at runtime:
 ```elixir
 Spectre.Pulse.protocol()
 ```
+
+## AgentServer / Spectre 0.4
+
+This branch implements the optional `Spectre.Stack.Installable.tools/1`
+registration contract. Install the package in the Agent's Stack and use
+`use Spectre.Server, tools: MyApp.AI` in the separate Server module. The core
+creates helpers; this package does not export functions to import into the
+Server. Tool results arrive through `on_result` after durable acquisition.
+
+`pulse(ctx, {:protocol}, on_result: :protocol)` and `{:contacts}` inspect the
+protocol and known identities. Install with `bind: [send: :send_agent_message]`
+to expose `{:send, %{to: address, payload: %{type: "text/plain", data: text}}}`
+as a governed proposal. The host configures the GAM binding/executor; its
+executor may call `Spectre.Pulse.ServerTool.execute(args, service_context)`
+after admission. Sender identity and stable message id come from the host,
+not the model. Error projections preserve `:not_sent` versus `:outcome_unknown`.
+
+For incoming messages call `Spectre.Pulse.receive(envelope, transport_context,
+agent_server: server)`. Existing authentication, recipient and authorization
+checks still run; accepted input returns `result.interaction` with `turn: nil`.
+Application responses are asynchronous Server consumer events. Legacy Instance
+inspection APIs retain their legacy target contract; they do not silently
+interpret a Server checkpoint as an Instance snapshot.
+
+For local integration tests set `SPECTRE_PATH=../spectre`; the core branch is
+`feature/agent-server-gam`. No transport credentials are needed for fixture tests.

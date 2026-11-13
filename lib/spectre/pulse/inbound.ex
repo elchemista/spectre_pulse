@@ -1,9 +1,13 @@
 defmodule Spectre.Pulse.Inbound do
   @moduledoc """
-  Secure inbound bridge from a validated Pulse envelope to `Spectre.turn/3`.
+  Secure inbound bridge from a validated Pulse envelope to Spectre.
+
+  With `agent_server: pid`, enqueue the authenticated input into AgentServer
+  and return its interaction id. Responses are emitted asynchronously through
+  the Server consumer; the returned receipt means queue acceptance.
 
   The bridge owns no session or state. It selects the host's Spectre state
-  scope and returns the ordinary `%Spectre.Turn{}` to the host. When the
+  scope. The legacy path returns the ordinary `%Spectre.Turn{}` to the host. When the
   trusted inbound context supplies an explicit `:subject`, it resolves or
   starts the core `Spectre.Instance` for `AgentRef + Subject`; Pulse remains a
   transport boundary and never owns the Instance, its Runs, or its state.
@@ -61,7 +65,12 @@ defmodule Spectre.Pulse.Inbound do
          canonical_sender: canonical_sender,
          target: target,
          input: input,
-         turn: turn,
+         turn: if(match?({:server_accepted, _}, turn), do: nil, else: turn),
+         interaction:
+           case turn do
+             {:server_accepted, id} -> id
+             _ -> nil
+           end,
          receipt: receipt
        }}
     else
@@ -473,6 +482,13 @@ defmodule Spectre.Pulse.Inbound do
           Envelope.t()
         ) :: {:ok, term()} | {:error, Error.t()}
   defp resolve_instance_target(target, context, opts, envelope) do
+    case Keyword.fetch(opts, :agent_server) do
+      {:ok, server} -> {:ok, {:agent_server, server}}
+      :error -> resolve_legacy_instance_target(target, context, opts, envelope)
+    end
+  end
+
+  defp resolve_legacy_instance_target(target, context, opts, envelope) do
     case Keyword.get(opts, :subject, context.subject) do
       nil when is_struct(target, AgentRef) ->
         {:error, Error.not_sent(:routing, :subject_required, message_id: envelope.id)}
@@ -611,7 +627,18 @@ defmodule Spectre.Pulse.Inbound do
   end
 
   @spec run_turn(term(), Spectre.Input.t(), keyword(), Envelope.t()) ::
-          {:ok, Spectre.Turn.t()} | {:error, Error.t()}
+          {:ok, Spectre.Turn.t() | {:server_accepted, String.t()}} | {:error, Error.t()}
+  defp run_turn({:agent_server, server}, input, _turn_opts, envelope) do
+    case Spectre.Server.input(server, %{input | raw: nil}) do
+      {:ok, id} -> {:ok, {:server_accepted, id}}
+      {:error, reason} -> {:error, Error.not_sent(:inbound, reason, message_id: envelope.id)}
+    end
+  catch
+    :exit, reason ->
+      {:error,
+       Error.outcome_unknown(:inbound, {:server_unavailable, reason}, message_id: envelope.id)}
+  end
+
   defp run_turn(target, input, turn_opts, envelope) do
     case Spectre.turn(target, input, turn_opts) do
       {:ok, %Spectre.Turn{} = turn} ->

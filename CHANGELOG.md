@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Spectre 0.4
+
+- Register protocol/contact inspection and explicitly bound governed sends; support authenticated incoming messages on AgentServer.
+- Require Spectre `~> 0.4.0`; retain legacy APIs where applicable.
+
 ## Unreleased
 
 - Add multi-Agent connection definitions, authenticated live-connection

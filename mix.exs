@@ -32,18 +32,12 @@ defmodule SpectrePulse.MixProject do
     [
       # Pulse deliberately depends on Spectre, never the other way around.
       spectre_dep(),
-      {:spectre_beam,
-       github: "elchemista/spectre_beam", branch: "main", only: :test, runtime: false},
-      {:spectre_directive,
-       github: "elchemista/spectre_directive", branch: "main", only: :test, runtime: false},
-      {:spectre_kinetic,
-       github: "elchemista/spectre_kinetic", branch: "main", only: :test, runtime: false},
-      {:spectre_lens,
-       github: "elchemista/spectre_lens", branch: "main", only: :test, runtime: false},
-      {:spectre_mnemonic,
-       github: "elchemista/spectre_mnemonic", branch: "main", only: :test, runtime: false},
-      {:spectre_prism,
-       github: "elchemista/spectre_prism", branch: "main", only: :test, runtime: false},
+      satellite_dep(:spectre_beam),
+      satellite_dep(:spectre_directive),
+      satellite_dep(:spectre_kinetic),
+      satellite_dep(:spectre_lens),
+      satellite_dep(:spectre_mnemonic),
+      satellite_dep(:spectre_prism),
       {:jason, "~> 1.4"},
       {:req, "~> 0.5"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
@@ -52,13 +46,25 @@ defmodule SpectrePulse.MixProject do
     ]
   end
 
+  defp satellite_dep(name) do
+    variable = name |> Atom.to_string() |> String.upcase() |> Kernel.<>("_PATH")
+
+    case System.get_env(variable) do
+      path when is_binary(path) and path != "" ->
+        {name, path: Path.expand(path, __DIR__), only: :test, runtime: false}
+
+      _ ->
+        {name, github: "elchemista/#{name}", branch: "main", only: :test, runtime: false}
+    end
+  end
+
   defp spectre_dep do
     case System.get_env("SPECTRE_PATH") do
       path when is_binary(path) and path != "" ->
         {:spectre, path: Path.expand(path, __DIR__), override: true}
 
       _unset ->
-        {:spectre, "~> 0.3.4", override: true}
+        {:spectre, "~> 0.4.0", override: true}
     end
   end
 

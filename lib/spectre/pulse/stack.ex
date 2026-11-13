@@ -18,7 +18,7 @@ defmodule Spectre.Pulse.Stack do
       id: :pulse,
       version: @version,
       contract: 1,
-      spectre: "~> 0.3.4",
+      spectre: "~> 0.4.0",
       provides: [{:contract, {:pulse, 1}}, {:service, :pulse}],
       requires: [],
       conflicts: [],
@@ -39,7 +39,8 @@ defmodule Spectre.Pulse.Stack do
          declarations <- DSL.compile!(block, caller, transport: 2, directory: 1),
          {:ok, transports} <- compile_transports(declarations),
          {:ok, directory} <- compile_directory(declarations) do
-      {:ok, %{transports: transports, directory: directory}}
+      config = %{transports: transports, directory: directory}
+      {:ok, if(opts == [], do: config, else: Map.put(config, :options, opts))}
     end
   end
 
@@ -47,9 +48,22 @@ defmodule Spectre.Pulse.Stack do
   defp validate_options([]), do: :ok
 
   defp validate_options(opts) when is_list(opts) do
-    if Keyword.keyword?(opts),
-      do: {:error, {:unknown_pulse_stack_options, Keyword.keys(opts)}},
-      else: {:error, {:invalid_pulse_stack_options, opts}}
+    cond do
+      not Keyword.keyword?(opts) ->
+        {:error, {:invalid_pulse_stack_options, opts}}
+
+      Keyword.keys(opts) -- [:bind] != [] ->
+        {:error, {:unknown_pulse_stack_options, Keyword.keys(opts) -- [:bind]}}
+
+      not Keyword.keyword?(Keyword.get(opts, :bind, [])) ->
+        {:error, :invalid_pulse_tool_bindings}
+
+      Keyword.keys(Keyword.get(opts, :bind, [])) -- [:send] != [] ->
+        {:error, :unknown_pulse_tool_binding}
+
+      true ->
+        :ok
+    end
   end
 
   defp validate_options(opts), do: {:error, {:invalid_pulse_stack_options, opts}}
