@@ -2,6 +2,26 @@ defmodule Spectre.Pulse.ServerToolTest do
   use ExUnit.Case, async: true
   alias Spectre.Pulse.{Config, Envelope, ServerTool}
 
+  defmodule DeliveryNetwork do
+    def deliver(envelope, _opts) do
+      send(self(), {:pulse_delivery_attempt, envelope})
+
+      case Process.get({__MODULE__, :result}) do
+        nil ->
+          {:ok, Spectre.Pulse.Receipt.accepted(envelope.id, via: :fixture, route_id: "fixture")}
+
+        result ->
+          result
+      end
+    end
+  end
+
+  defmodule DeliveryAgent do
+    def __spectre_pulse__ do
+      Spectre.Pulse.Config.new!(identity: "spectre://test/sender", network: DeliveryNetwork)
+    end
+  end
+
   defmodule Stack do
     use Spectre.Stack
     install(Spectre.Pulse, bind: [send: :send_agent_message])
@@ -69,5 +89,69 @@ defmodule Spectre.Pulse.ServerToolTest do
              )
 
     GenServer.stop(server)
+  end
+
+  test "admitted send invokes the real network dispatcher and pins identity and stable command id" do
+    attrs = %{to: "spectre://test/receiver", payload: %{type: "support.message", data: "Hello"}}
+    {:ok, prepared} = ServerTool.prepare(:send, [attrs], %{agent: DeliveryAgent})
+    id = Spectre.Identity.uuid7()
+    forged = Map.merge(prepared, %{from: "spectre://evil/forged", id: "forged"})
+
+    assert {:ok, %{message_id: ^id, status: :accepted}} =
+             ServerTool.execute(forged, %{agent: DeliveryAgent, command_id: id})
+
+    assert_received {:pulse_delivery_attempt,
+                     %{id: ^id, from: "spectre://test/sender", to: "spectre://test/receiver"}}
+
+    assert {:error, %{outcome: :not_sent}} =
+             ServerTool.execute(prepared, %{agent: DeliveryAgent, command_id: "invalid-id"})
+
+    assert {:error, %{outcome: :not_sent}} =
+             ServerTool.execute(prepared, %{agent: DeliveryAgent, command_id: 123})
+
+    refute_received {:pulse_delivery_attempt, _}
+  end
+
+  test "send uncertainty and generic errors remain bounded portable data" do
+    attrs = %{to: "spectre://test/receiver", payload: %{type: "support.message", data: "Hi"}}
+    {:ok, prepared} = ServerTool.prepare(:send, [attrs], %{agent: DeliveryAgent})
+
+    Process.put(
+      {DeliveryNetwork, :result},
+      {:error,
+       Spectre.Pulse.Error.outcome_unknown(:transport, %{
+         pid: self(),
+         huge: String.duplicate("private", 5000)
+       })}
+    )
+
+    assert {:error, %{outcome: :outcome_unknown} = error} =
+             ServerTool.execute(prepared, %{
+               agent: DeliveryAgent,
+               command_id: Spectre.Identity.uuid7()
+             })
+
+    assert_received {:pulse_delivery_attempt, _}
+    assert :ok = Spectre.GAM.Canonical.Value.validate(error, max_bytes: 4096)
+    refute inspect(error) =~ "private"
+
+    assert {:ok, {:error, %{outcome: :outcome_unknown} = projected}} =
+             ServerTool.project(:send, {:error, self()})
+
+    assert :ok = Spectre.GAM.Canonical.Value.validate(projected, max_bytes: 4096)
+  end
+
+  test "binding typos, duplicates, nil and non-atom operations fail during installation" do
+    for bindings <- [
+          [sned: :send],
+          [send: nil],
+          [send: "send"],
+          [send: :one, send: :two],
+          :invalid
+        ] do
+      assert_raise ArgumentError, ~r/pulse bind:/, fn ->
+        Spectre.Pulse.tools(%{options: [bind: bindings]})
+      end
+    end
   end
 end

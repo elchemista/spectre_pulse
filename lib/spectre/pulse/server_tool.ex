@@ -3,9 +3,12 @@ defmodule Spectre.Pulse.ServerTool do
   AgentServer tool adapter for protocol discovery and governed agent messages.
   Sending is exposed only through an explicit host operation binding.
   """
+  alias Spectre.GAM.Canonical.Value
   alias Spectre.Pulse.{Config, Envelope, Error, Receipt}
 
   def tools(config) do
+    bindings = bindings!(config)
+
     operations =
       Map.new(
         [:protocol, :contacts],
@@ -13,7 +16,7 @@ defmodule Spectre.Pulse.ServerTool do
       )
 
     operations =
-      case Keyword.get(Map.get(config, :options, []), :bind, [])[:send] do
+      case Keyword.get(bindings, :send) do
         nil ->
           operations
 
@@ -43,7 +46,7 @@ defmodule Spectre.Pulse.ServerTool do
         {:error, :unsupported_pulse_fields}
 
       {:error, %Error{} = error} ->
-        {:error, %{kind: error.kind, outcome: error.outcome, message: Exception.message(error)}}
+        {:error, portable_error(error)}
     end
   end
 
@@ -65,39 +68,82 @@ defmodule Spectre.Pulse.ServerTool do
 
   def project(_operation, {:ok, value}), do: {:ok, {:ok, value}}
 
-  def project(_operation, {:error, %Error{} = error}),
-    do:
-      {:ok,
-       {:error, %{kind: error.kind, outcome: error.outcome, message: Exception.message(error)}}}
-
-  def project(_operation, {:error, reason}), do: {:ok, {:error, reason}}
+  def project(_operation, {:error, reason}), do: {:ok, {:error, portable_error(reason)}}
   def project(_operation, _result), do: {:error, :invalid_pulse_tool_result}
 
   @doc "Host executor primitive; call only after GAM admission with a stable command id."
   def execute(attrs, context) do
-    with id when is_binary(id) <- Map.get(context, :command_id),
+    with {:ok, envelope} <- admitted_envelope(attrs, context),
          {:ok, config} <- Config.fetch(context.agent),
-         {:ok, envelope} <-
-           Envelope.new(Map.merge(attrs, %{"id" => id, "from" => config.identity})),
          {:ok, %Receipt{} = receipt} <-
            Spectre.Pulse.deliver(envelope, network: config.network, directory: config.directory) do
-      {:ok,
-       %{
-         message_id: receipt.message_id,
-         status: receipt.status,
-         via: receipt.via,
-         route_id: receipt.route_id,
-         accepted_at: DateTime.to_iso8601(receipt.accepted_at)
-       }}
+      project_receipt(receipt)
     else
-      nil ->
-        {:error, :command_id_required}
-
-      {:error, %Error{} = error} ->
-        {:error, %{kind: error.kind, outcome: error.outcome, message: Exception.message(error)}}
-
-      {:error, _} = error ->
-        error
+      {:error, reason} -> {:error, portable_error(reason)}
+      other -> {:error, portable_error(other)}
     end
+  rescue
+    _ -> {:error, portable_error(:pulse_delivery_exception)}
+  catch
+    _, _ -> {:error, portable_error(:pulse_delivery_failure)}
+  end
+
+  defp admitted_envelope(attrs, %{command_id: id} = context) when is_binary(id) do
+    with {:ok, config} <- Config.fetch(context.agent) do
+      attrs
+      |> Map.drop([:id, :from, "id", "from"])
+      |> Map.merge(%{"id" => id, "from" => config.identity})
+      |> Envelope.new()
+    end
+  end
+
+  defp admitted_envelope(_attrs, _context),
+    do: {:error, Error.not_sent(:validation, :command_id_required)}
+
+  defp project_receipt(receipt) do
+    result = %{
+      message_id: receipt.message_id,
+      status: receipt.status,
+      via: receipt.via,
+      route_id: receipt.route_id,
+      accepted_at: DateTime.to_iso8601(receipt.accepted_at)
+    }
+
+    case Value.validate(result, max_bytes: 4096) do
+      :ok -> {:ok, result}
+      {:error, _} -> {:error, portable_error(:invalid_pulse_receipt)}
+    end
+  end
+
+  defp portable_error(%Error{} = error) do
+    %{
+      kind: if(is_atom(error.kind), do: error.kind, else: :transport),
+      outcome: if(error.outcome == :not_sent, do: :not_sent, else: :outcome_unknown),
+      message: bounded_reason(error.reason)
+    }
+  end
+
+  defp portable_error(reason),
+    do: %{kind: :transport, outcome: :outcome_unknown, message: bounded_reason(reason)}
+
+  defp bounded_reason(reason) do
+    case Value.validate(reason, max_bytes: 2048) do
+      :ok -> inspect(reason, limit: 20, printable_limit: 256)
+      {:error, _} -> "pulse error details unavailable"
+    end
+  end
+
+  defp bindings!(config) do
+    bindings = Keyword.get(Map.get(config, :options, []), :bind, [])
+
+    unless Keyword.keyword?(bindings) and
+             length(Keyword.keys(bindings)) == length(Enum.uniq(Keyword.keys(bindings))) and
+             Enum.all?(bindings, fn {key, operation} ->
+               key == :send and is_atom(operation) and operation not in [nil, true, false]
+             end) do
+      raise ArgumentError, "pulse bind: expects unique send: host_operation entries"
+    end
+
+    bindings
   end
 end

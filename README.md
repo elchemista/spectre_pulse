@@ -314,3 +314,9 @@ interpret a Server checkpoint as an Instance snapshot.
 
 For local integration tests set `SPECTRE_PATH=../spectre`; the core branch is
 `feature/agent-server-gam`. No transport credentials are needed for fixture tests.
+
+`ServerTool.execute/2` preserves Pulse error outcomes: `:not_sent` means no
+delivery was reported; `:outcome_unknown` requires reconciliation and must map
+to a GAM ambiguous outcome. Error projections are bounded and never carry raw
+process handles or arbitrary provider details. The command id and sender identity
+are pinned from trusted execution context even when input contains both key forms.

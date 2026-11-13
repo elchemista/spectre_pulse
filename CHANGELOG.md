@@ -2,6 +2,8 @@
 
 ## Unreleased — Spectre 0.4
 
+- Validate governed send bindings; bound error projections while preserving uncertainty and pin sender/id in the actual delivery path.
+
 - Register protocol/contact inspection and explicitly bound governed sends; support authenticated incoming messages on AgentServer.
 - Require Spectre `~> 0.4.0`; retain legacy APIs where applicable.
 
