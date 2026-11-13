@@ -1,5 +1,9 @@
 # Phoenix WebSocket integration
 
+[Current README](../README.md) · [AgentServer 0.4](SPECTRE_0_4.md) · [Migration](MIGRATING_TO_0_4.md)
+
+Protocol and transport contracts remain supported. Instance, Work/Vigil and Studio runtime sections use their retained APIs; they do not automatically register or govern AgentServers.
+
 Pulse integrates with the Phoenix Endpoint already owned by the host
 application. It does not start a second HTTP server and does not add Phoenix as
 a package dependency.

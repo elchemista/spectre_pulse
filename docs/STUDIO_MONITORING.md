@@ -1,5 +1,9 @@
 # Spectre Studio OTP runtime monitoring
 
+[Current README](../README.md) · [AgentServer 0.4](SPECTRE_0_4.md) · [Migration](MIGRATING_TO_0_4.md)
+
+Protocol and transport contracts remain supported. Instance, Work/Vigil and Studio runtime sections use their retained APIs; they do not automatically register or govern AgentServers.
+
 Pulse provides a temporary, connection-scoped stream of safe OTP process
 snapshots. Spectre Studio can enable it when an operator opens a LiveView panel
 and disable it when the panel closes.

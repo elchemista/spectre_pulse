@@ -2,6 +2,8 @@
 
 ## Unreleased — Spectre 0.4
 
+- Rewrite the README around standalone use and Stack → Agent → Server integration; add lifecycle/GAM, migration and explicitly scoped retained-runtime guides to ExDoc.
+
 - Validate governed send bindings; bound error projections while preserving uncertainty and pin sender/id in the actual delivery path.
 
 - Register protocol/contact inspection and explicitly bound governed sends; support authenticated incoming messages on AgentServer.

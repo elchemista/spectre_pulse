@@ -1,6 +1,10 @@
 # Spectre Studio Work and Vigil monitoring
 
-Pulse exposes the committed, read-only Work and Vigil views already provided by
+[Current README](../README.md) · [AgentServer 0.4](SPECTRE_0_4.md) · [Migration](MIGRATING_TO_0_4.md)
+
+Protocol and transport contracts remain supported. Instance, Work/Vigil and Studio runtime sections use their retained APIs; they do not automatically register or govern AgentServers.
+
+Pulse retains the committed, read-only Work and Vigil views introduced with
 Spectre 0.3.4. Studio can read one snapshot or open a temporary near-realtime
 subscription while an operator watches an Agent Instance.
 

@@ -1,5 +1,9 @@
 # Spectre Pulse architecture
 
+[Current README](../README.md) · [AgentServer 0.4](SPECTRE_0_4.md) · [Migration](MIGRATING_TO_0_4.md)
+
+Protocol and transport contracts remain supported. Instance, Work/Vigil and Studio runtime sections use their retained APIs; they do not automatically register or govern AgentServers.
+
 Pulse keeps the network technical and the Agents autonomous:
 
 > Pulse does not coordinate Agents; it enables Agents to coordinate.

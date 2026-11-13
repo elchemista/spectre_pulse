@@ -71,9 +71,12 @@ defmodule SpectrePulse.MixProject do
   defp docs do
     [
       main: "readme",
-      source_ref: "v#{@version}",
+      source_ref: "feature/stack-tools-0.4",
       extras: [
         "README.md",
+        "docs/SPECTRE_0_4.md",
+        "docs/MIGRATING_TO_0_4.md",
+        "docs/TRANSPORTS_AND_LEGACY_RUNTIME.md",
         "docs/GETTING_STARTED.md",
         "docs/PHOENIX.md",
         "docs/STUDIO_MONITORING.md",
@@ -89,6 +92,9 @@ defmodule SpectrePulse.MixProject do
       groups_for_extras: [
         "Start here": [
           "README.md",
+          "docs/SPECTRE_0_4.md",
+          "docs/MIGRATING_TO_0_4.md",
+          "docs/TRANSPORTS_AND_LEGACY_RUNTIME.md",
           "docs/GETTING_STARTED.md",
           "docs/PHOENIX.md"
         ],

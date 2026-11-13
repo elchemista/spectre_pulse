@@ -1,5 +1,9 @@
 # Delivery semantics and security
 
+[Current README](../README.md) · [AgentServer 0.4](SPECTRE_0_4.md) · [Migration](MIGRATING_TO_0_4.md)
+
+Protocol and transport contracts remain supported. Instance, Work/Vigil and Studio runtime sections use their retained APIs; they do not automatically register or govern AgentServers.
+
 Pulse separates message meaning, technical delivery, authenticated connection
 facts, and Agent policy. Read this guide before exposing an Agent over a network.
 

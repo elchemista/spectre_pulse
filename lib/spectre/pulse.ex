@@ -1,11 +1,22 @@
 defmodule Spectre.Pulse do
   @moduledoc """
-  Transport-independent communication protocol for Spectre agents.
+  Transport-independent communication between Spectre applications.
 
-  Pulse supplies identity, immutable envelopes, correlation, contact/routing
-  values, technical delivery, and a bridge to the ordinary Spectre turn. It
-  owns no room, task, workflow, store, journal, retry loop, or semantic process
-  per message.
+  Pulse supplies immutable envelopes, correlation, contact routing and technical
+  delivery. In Spectre 0.4, a Stack installation and
+  `use Spectre.Server, tools: MyApp.AI` generate the private
+  `pulse(ctx, operation, opts)` helper. `:protocol` and `:contacts` are cognitive;
+  `:send` requires an explicit host operation binding and GAM admission.
+
+  Authenticated inbound envelopes can be enqueued on an existing Server. Pulse
+  does not own a second semantic loop, retry scheduler, journal or conversation.
+  A transport timeout can leave delivery uncertain; it is not proof that nothing
+  was sent. Installing the package grants no authority, and native send calls do
+  not automatically enter GAM. See the [0.4 integration guide](SPECTRE_0_4.md) and
+  [Governed Act Model](https://spectre.guide/en/governed-act-model).
+
+  Native protocol and transport APIs remain usable independently. Retained
+  Instance/Studio integrations are documented separately from AgentServer.
   """
 
   alias Spectre.Agent

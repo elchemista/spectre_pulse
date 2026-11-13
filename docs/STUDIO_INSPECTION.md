@@ -1,5 +1,9 @@
 # Studio inspection and governance
 
+[Current README](../README.md) · [AgentServer 0.4](SPECTRE_0_4.md) · [Migration](MIGRATING_TO_0_4.md)
+
+Protocol and transport contracts remain supported. Instance, Work/Vigil and Studio runtime sections use their retained APIs; they do not automatically register or govern AgentServers.
+
 Pulse exposes a small, scoped Studio bridge over the authenticated Phoenix
 connection. Bridge envelopes terminate at the connection boundary: they do not
 enter an Agent turn, prompt, or application flow.

@@ -1,8 +1,12 @@
 # Spectre Pulse public API — 0.1.0
 
+[Current README](../README.md) · [AgentServer 0.4](SPECTRE_0_4.md) · [Migration](MIGRATING_TO_0_4.md)
+
+Protocol and transport contracts remain supported. Instance, Work/Vigil and Studio runtime sections use their retained APIs; they do not automatically register or govern AgentServers.
+
 This file is the normative public API manifest for Spectre Pulse `0.1.0`.
 Protocol v1 remains stable while the package and Stack contracts target
-Spectre `0.3.4`. Compatibility guarantees
+Spectre `0.4.0` on this development branch. Compatibility guarantees
 apply only to the modules and callables listed below. Any module, function,
 macro, or callback not listed here is an implementation detail even when it is
 exported or visible in generated docs.
@@ -13,6 +17,9 @@ public. Modules with no callable row expose only their documented module,
 type, and struct contract.
 
 ## Manifest
+
+- `Spectre.Pulse.ServerTool`
+  - functions: `execute/2`
 
 - `Spectre.Pulse`
   - functions: `close_connection/1`, `config/1`, `connect/3`, `connect/4`, `connection/1`, `connection_specs/0`, `connections/0`, `contacts/1`, `correlate/2`, `deliver/2`, `disconnect/1`, `envelope/1`, `execute/2`, `execute/3`, `execute_turn/1`, `execute_turn/2`, `exposed_agents/1`, `find_contacts/2`, `forget_contact/2`, `local_agents/0`, `monitoring_subscriptions/0`, `monitoring_subscriptions/1`, `open_connection/2`, `operation_monitoring_subscriptions/0`, `operation_monitoring_subscriptions/1`, `operations/2`, `operations/3`, `protocol/0`, `reachability/2`, `reachability/3`, `receive/2`, `receive/3`, `register_transport/2`, `register_transport/3`, `remember_contact/2`, `remote_agents/0`, `resolve/2`, `runtime_info/2`, `runtime_info/3`, `start_link/1`, `subscribe/1`, `subscribe/2`, `touch_connection/1`, `touch_connection/2`
@@ -115,3 +122,11 @@ type, and struct contract.
   - functions: `handle_frame/2`, `handle_frame/3`
 - `Spectre.Pulse.Validator`
   - functions: `valid_id?/1`, `validate/1`, `validate/2`
+
+## AgentServer 0.4 boundary
+
+The `tools/1` implementation of `c:Spectre.Stack.Installable.tools/1` registers the Stack helper. `receive/3` accepts the trusted
+`agent_server:` option; its `Inbound.Result` carries `interaction` with `turn: nil`.
+`Spectre.Pulse.ServerTool.execute/2` is a technical admitted-executor primitive;
+it preserves sender/id pinning and bounded uncertainty. The private generated
+`pulse/3` belongs to the Server, not the facade. See [the guide](SPECTRE_0_4.md).
