@@ -29,7 +29,12 @@ end
 ```
 
 The manifest requirement `{:spectre, "~> 0.4.0"}` describes compatibility, not
-publication availability. Local contributors can use `SPECTRE_PATH=../spectre` for this repository's dependency override.
+publication availability. Local contributors can use `SPECTRE_PATH=../spectre`
+for the core dependency override. The ecosystem tests use the six satellites'
+0.4 branches and exact revisions in `mix.lock`. To test sibling working trees,
+also set `SPECTRE_BEAM_PATH`, `SPECTRE_DIRECTIVE_PATH`, `SPECTRE_KINETIC_PATH`,
+`SPECTRE_LENS_PATH`, `SPECTRE_MNEMONIC_PATH` and `SPECTRE_PRISM_PATH` to their
+respective directories; otherwise Mix uses the locked Git sources.
 
 ## Discover the protocol in AgentServer
 
@@ -65,8 +70,9 @@ through `handle_result/3`; it is generated from the Stack, not imported from Pul
 
 ## Send an agent message
 
-Add `bind: [send: :notify_agent]` to the installation and configure a GAM host
-binding for `:notify_agent`. Then stage the message from a Server callback:
+Add `bind: [send: :notify_agent]` to the installation and enable `:notify_agent`
+in the root Server's `gam:` operations. Spectre owns the automatic GAM connection
+and registered execution. Then stage the message from a Server callback:
 
 ```elixir
 pulse(ctx,
@@ -95,3 +101,40 @@ spells out this boundary and the retained legacy paths.
 - [Standalone and retained runtime reference](docs/TRANSPORTS_AND_LEGACY_RUNTIME.md)
 - [Public API](docs/PUBLIC_API.md) and [changelog](CHANGELOG.md)
 - [Governed Act Model](https://spectre.guide/en/governed-act-model) and [core tool lifecycle](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/STACK_TOOLS.md)
+
+## Use inside a reusable Skill
+
+The `pulse` helper is generated in a Skill callback module with
+`use Spectre.Server, tools: MyApp.AI`, using the same installed Stack. A
+`Spectre.Skill` with `server:` has a separate GenServer, local assigns, workers,
+streams, pending intentions and checkpoint key.
+
+**It uses the root AgentServer's same automatic GAM integration, Domain and
+authority ledger.** Configure `gam:` once on the root. Mounting a Skill creates
+no new Domain or grant and needs no additional Host or consent ingress. Shared
+Stack resources stay in their existing supervised runtime.
+
+Agent and Skill workers can run concurrently; the shared kernel orders admission.
+A governed effect must be enabled in root `operations` and permitted by the
+mount's `governed:` references. Each Skill proposal records its mount and
+invocation provenance. Consent identifies the originating Skill and exact
+presentation: approving an email cannot approve another Skill's memory write.
+Timer closure is recorded in the same Domain and does not erase a Duty.
+Ordinary cognitive operations retain their configured provider boundary.
+
+See the [core Skill ownership and consent guide](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/SKILLS.md),
+[automatic GAM responsibilities](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/MANAGED_GAM.md)
+and [two-Skill LiveView showcase](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/DEMO.md).
+
+## Managed GAM execution registration
+
+The optional `c:Spectre.Stack.Installable.effects/1` callback registers immutable
+execution adapters for Spectre 0.4 managed GAM. Pulse registers only a `send` operation selected by `bind:`. Definitive not-sent responses are distinct from transport outcomes that remain unknown.
+
+The effect registration is included in the compiled installation digest and is
+checked again before execution. It grants no authority: the application enables
+operations and the GAM kernel admits each concrete consequence before the adapter
+runs. AgentServer owns GAM automatically in every environment. Native package
+APIs remain available outside the AgentServer loop; their caller owns that boundary.
+Adapters implement `execute_effect/3` and distinguish successful observations,
+definitive no-effect and uncertain outcomes; uncertain effects are not retried.

@@ -6,6 +6,39 @@ defmodule Spectre.Pulse.ServerTool do
   alias Spectre.GAM.Canonical.Value
   alias Spectre.Pulse.{Config, Envelope, Error, Receipt}
 
+  @behaviour Spectre.Server.GAM.EffectAdapter
+
+  @doc "Declares the execution adapter for explicitly bound sending."
+  @spec effects(map()) :: map()
+  def effects(config) do
+    Map.new(bindings!(config), fn {:send, operation} ->
+      {operation,
+       %{
+         contract: 1,
+         adapter: __MODULE__,
+         operation: :send,
+         side_effect: :non_idempotent,
+         material: :arguments,
+         partition: [],
+         schema_hash: nil,
+         config: %{}
+       }}
+    end)
+  end
+
+  @doc "Executes an admitted message without retry, preserving transport uncertainty."
+  @spec execute_effect(:send, map(), map()) ::
+          {:ok, term()} | {:error, :definitive_no_effect | :ambiguous, term()}
+  def execute_effect(:send, args, context) do
+    case execute(args, context) do
+      {:ok, receipt} -> {:ok, receipt}
+      {:error, %{outcome: :not_sent} = reason} -> {:error, :definitive_no_effect, reason}
+      {:error, reason} -> {:error, :ambiguous, reason}
+    end
+  end
+
+  def execute_effect(_, _, _), do: {:error, :definitive_no_effect, :invalid_pulse_effect}
+
   def tools(config) do
     bindings = bindings!(config)
 

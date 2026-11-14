@@ -54,7 +54,11 @@ defmodule SpectrePulse.MixProject do
         {name, path: Path.expand(path, __DIR__), only: :test, runtime: false}
 
       _ ->
-        {name, github: "elchemista/#{name}", branch: "main", only: :test, runtime: false}
+        {name,
+         github: "elchemista/#{name}",
+         branch: "feature/stack-tools-0.4",
+         only: :test,
+         runtime: false}
     end
   end
 

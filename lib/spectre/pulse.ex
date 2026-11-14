@@ -56,6 +56,11 @@ defmodule Spectre.Pulse do
   @impl Spectre.Stack.Installable
   def tools(config), do: Spectre.Pulse.ServerTool.tools(config)
 
+  @doc "Registers explicitly bound messages for managed GAM execution."
+  @spec effects(map()) :: map()
+  @impl Spectre.Stack.Installable
+  def effects(config), do: Spectre.Pulse.ServerTool.effects(config)
+
   @doc """
   Starts the host Pulse runtime.
 

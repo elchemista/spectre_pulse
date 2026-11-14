@@ -2,6 +2,13 @@ defmodule Spectre.Pulse.ServerToolTest do
   use ExUnit.Case, async: true
   alias Spectre.Pulse.{Config, Envelope, ServerTool}
 
+  test "managed message registration remains opt-in" do
+    assert %{} = Spectre.Pulse.effects(%{})
+    effects = Spectre.Pulse.effects(%{options: [bind: [send: :send_agent_message]]})
+    assert %{send_agent_message: %{adapter: ServerTool, operation: :send}} = effects
+    assert Spectre.Stack.Effects.validate!(effects) == effects
+  end
+
   defmodule DeliveryNetwork do
     def deliver(envelope, _opts) do
       send(self(), {:pulse_delivery_attempt, envelope})
@@ -79,7 +86,8 @@ defmodule Spectre.Pulse.ServerToolTest do
     assert result.turn == nil
     assert is_binary(result.interaction)
     id = result.interaction
-    assert_receive {Spectre.Server, ^server, {:response, ^id, "accepted", []}}, 2000
+    assert_receive {Spectre.Server, ^server, {:response, ^id, "accepted", metadata}}, 2000
+    assert is_binary(metadata[:message_id])
 
     assert {:error, %{kind: :authentication}} =
              Spectre.Pulse.receive(
