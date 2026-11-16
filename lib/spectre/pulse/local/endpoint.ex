@@ -62,6 +62,15 @@ defmodule Spectre.Pulse.Local.Endpoint do
     {:ok, state}
   end
 
+  @impl GenServer
+  def handle_call({:bind_endpoint, endpoint, endpoint_opts}, _from, state) do
+    Registry.update_value(Spectre.Pulse.Local.Registry, state.identity, fn metadata ->
+      Map.put(metadata, :endpoint, endpoint)
+    end)
+
+    {:reply, :ok, %{state | endpoint: endpoint, endpoint_opts: endpoint_opts}}
+  end
+
   @doc false
   @spec handle_info(term(), state()) :: {:noreply, state()}
   @impl GenServer

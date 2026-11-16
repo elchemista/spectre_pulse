@@ -130,3 +130,13 @@ The `tools/1` implementation of `c:Spectre.Stack.Installable.tools/1` registers 
 `Spectre.Pulse.ServerTool.execute/2` is a technical admitted-executor primitive;
 it preserves sender/id pinning and bounded uncertainty. The private generated
 `pulse/3` belongs to the Server, not the facade. See [the guide](SPECTRE_0_4.md).
+
+## External human approval adapter
+
+- `Spectre.Pulse.Approval`
+  - functions: `types/0`, `send_message/2`
+
+The adapter implements core Managed GAM’s transport contract using Envelope v1.
+Its request/rendering/decision/cancellation messages are described in
+[External approvals](EXTERNAL_APPROVALS.md). A technical delivery receipt never
+serves as consent. The core protocol also works with independent adapters.

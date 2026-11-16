@@ -9,6 +9,7 @@ defmodule SpectrePulse.MixProject do
       app: :spectre_pulse,
       name: "Spectre Pulse",
       version: @version,
+      package: package(),
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       description: "A transport-independent protocol for communication between Spectre agents.",
@@ -68,17 +69,19 @@ defmodule SpectrePulse.MixProject do
         {:spectre, path: Path.expand(path, __DIR__), override: true}
 
       _unset ->
-        {:spectre, "~> 0.4.0", override: true}
+        {:spectre, "~> 0.4.0"}
     end
   end
 
   defp docs do
     [
+      assets: %{"docs/assets" => "docs/assets"},
       main: "readme",
       source_ref: "feature/stack-tools-0.4",
       extras: [
         "README.md",
         "docs/SPECTRE_0_4.md",
+        "docs/EXTERNAL_APPROVALS.md",
         "docs/MIGRATING_TO_0_4.md",
         "docs/TRANSPORTS_AND_LEGACY_RUNTIME.md",
         "docs/GETTING_STARTED.md",
@@ -97,6 +100,7 @@ defmodule SpectrePulse.MixProject do
         "Start here": [
           "README.md",
           "docs/SPECTRE_0_4.md",
+          "docs/EXTERNAL_APPROVALS.md",
           "docs/MIGRATING_TO_0_4.md",
           "docs/TRANSPORTS_AND_LEGACY_RUNTIME.md",
           "docs/GETTING_STARTED.md",
@@ -148,6 +152,7 @@ defmodule SpectrePulse.MixProject do
           Spectre.Pulse.Endpoint,
           Spectre.Pulse.Inbound,
           Spectre.Pulse.InboundContext,
+          Spectre.Pulse.Approval,
           Spectre.Pulse.Executor,
           Spectre.Pulse.Expectation,
           Spectre.Pulse.Runtime,
@@ -164,6 +169,18 @@ defmodule SpectrePulse.MixProject do
           Spectre.Pulse.Transports.WebSocket
         ]
       ]
+    ]
+  end
+
+  defp package do
+    [
+      licenses: ["Apache-2.0"],
+      links: %{
+        "GitHub" => @source_url,
+        "Documentation" => "#{@source_url}/blob/feature/stack-tools-0.4/README.md",
+        "Changelog" => "#{@source_url}/blob/feature/stack-tools-0.4/CHANGELOG.md"
+      },
+      files: ~w(lib priv docs examples mix.exs .formatter.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 end

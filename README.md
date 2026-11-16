@@ -28,13 +28,9 @@ def deps do
 end
 ```
 
-The manifest requirement `{:spectre, "~> 0.4.0"}` describes compatibility, not
-publication availability. Local contributors can use `SPECTRE_PATH=../spectre`
-for the core dependency override. The ecosystem tests use the six satellites'
-0.4 branches and exact revisions in `mix.lock`. To test sibling working trees,
-also set `SPECTRE_BEAM_PATH`, `SPECTRE_DIRECTIVE_PATH`, `SPECTRE_KINETIC_PATH`,
-`SPECTRE_LENS_PATH`, `SPECTRE_MNEMONIC_PATH` and `SPECTRE_PRISM_PATH` to their
-respective directories; otherwise Mix uses the locked Git sources.
+The core requirement `~> 0.4.0` describes compatibility; use these source
+branches until the matching packages are available. For local development, see
+[Contributing](#contributing).
 
 ## Discover the protocol in AgentServer
 
@@ -94,8 +90,35 @@ asynchronously through the Server consumer. Do not derive authenticated identity
 from an unverified `envelope.from`. The [integration guide](docs/SPECTRE_0_4.md)
 spells out this boundary and the retained legacy paths.
 
+## Ask a human through their personal agent
+
+For example, a customer agent can require your consent before opening a browser.
+Pulse delivers the frozen request to your personal AgentServer; its authenticated
+chat consumer shows it to you. Managed GAM verifies your signed choice under the
+customer's original permissions before deciding whether execution can proceed.
+
+![Spectre Pulse: Ask a human through their personal agent](docs/assets/readme-architecture.svg)
+
+[Diagram source](docs/assets/readme-architecture.mmd).
+
+In the personal Server's configured consumer, acknowledge rendering and submit
+only the human's explicit choice for that exact request:
+
+```elixir
+reference = %{id: request["id"], from: request["from"]}
+:ok = Spectre.Server.approval_presented(personal_server, reference)
+# After the human chooses Approve; use :reject for refusal.
+:ok = Spectre.Server.approval_decide(personal_server, reference, :confirm)
+```
+
+Select `{Spectre.Pulse.Approval, []}` as `gam.approvals.transport` on both Servers.
+The [two-agent approval recipe](docs/EXTERNAL_APPROVALS.md) covers identities,
+keys, local subscriptions and authenticated remote delivery. The AI never obtains
+the human signing authority, and Pulse `accepted` receipts never count as consent.
+
 ## Documentation
 
+- [External human approvals between AgentServers](docs/EXTERNAL_APPROVALS.md)
 - [AgentServer integration, helpers and authority](docs/SPECTRE_0_4.md)
 - [Migration from the 0.3 integration](docs/MIGRATING_TO_0_4.md)
 - [Standalone and retained runtime reference](docs/TRANSPORTS_AND_LEGACY_RUNTIME.md)
@@ -104,37 +127,37 @@ spells out this boundary and the retained legacy paths.
 
 ## Use inside a reusable Skill
 
-The `pulse` helper is generated in a Skill callback module with
-`use Spectre.Server, tools: MyApp.AI`, using the same installed Stack. A
-`Spectre.Skill` with `server:` has a separate GenServer, local assigns, workers,
-streams, pending intentions and checkpoint key.
+The generated `pulse` helper also works in Skill Server callbacks using the same
+Stack. Each mount has its own process, state and checkpoint; governed operations
+share the root AgentServer's GAM Domain and must satisfy both root operations
+and mount `governed:` permissions. See the
+[core Skill guide](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/SKILLS.md) for ownership and consent.
 
-**It uses the root AgentServer's same automatic GAM integration, Domain and
-authority ledger.** Configure `gam:` once on the root. Mounting a Skill creates
-no new Domain or grant and needs no additional Host or consent ingress. Shared
-Stack resources stay in their existing supervised runtime.
+## Contributing
 
-Agent and Skill workers can run concurrently; the shared kernel orders admission.
-A governed effect must be enabled in root `operations` and permitted by the
-mount's `governed:` references. Each Skill proposal records its mount and
-invocation provenance. Consent identifies the originating Skill and exact
-presentation: approving an email cannot approve another Skill's memory write.
-Timer closure is recorded in the same Domain and does not erase a Duty.
-Ordinary cognitive operations retain their configured provider boundary.
+Use Elixir 1.19 and OTP 28. For sibling 0.4 checkouts, select the sources explicitly:
 
-See the [core Skill ownership and consent guide](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/SKILLS.md),
-[automatic GAM responsibilities](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/MANAGED_GAM.md)
-and [two-Skill LiveView showcase](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/DEMO.md).
+```sh
+export SPECTRE_PATH=../spectre
+export SPECTRE_BEAM_PATH=../spectre_beam
+export SPECTRE_DIRECTIVE_PATH=../spectre_directive
+export SPECTRE_KINETIC_PATH=../spectre_kinetic
+export SPECTRE_LENS_PATH=../spectre_lens
+export SPECTRE_MNEMONIC_PATH=../spectre_mnemonic
+export SPECTRE_PRISM_PATH=../spectre_prism
+mix deps.get
+mix test
+mix credo
+mix dialyzer
+mix docs --warnings-as-errors
+```
 
-## Managed GAM execution registration
+Satellite packages are test-only dependencies for ecosystem conformance. Without
+path overrides, the manifest selects their compatible Git branches. Phoenix
+integration tests use a host fixture; Pulse adds no Phoenix runtime dependency.
 
-The optional `c:Spectre.Stack.Installable.effects/1` callback registers immutable
-execution adapters for Spectre 0.4 managed GAM. Pulse registers only a `send` operation selected by `bind:`. Definitive not-sent responses are distinct from transport outcomes that remain unknown.
+## Examples
 
-The effect registration is included in the compiled installation digest and is
-checked again before execution. It grants no authority: the application enables
-operations and the GAM kernel admits each concrete consequence before the adapter
-runs. AgentServer owns GAM automatically in every environment. Native package
-APIs remain available outside the AgentServer loop; their caller owns that boundary.
-Adapters implement `execute_effect/3` and distinguish successful observations,
-definitive no-effect and uncertain outcomes; uncertain effects are not retried.
+The [LiveView playground](https://github.com/elchemista/demo_spectre) demonstrates
+Spectre and its packages. [spectre.guide](https://spectre.guide) explains GAM and
+provides usage articles. Package versions are independent of Spectre core.

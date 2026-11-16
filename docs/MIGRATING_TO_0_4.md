@@ -14,21 +14,11 @@ The package's compatibility requirement is Spectre `~> 0.4.0`; use the core
 | Legacy `pulse/2` action DSL | Server gets Stack-generated `pulse/3`; bind send to a host operation |
 | Studio/Instance inspectors assumed to cover every runtime | Keep those adapters explicitly scoped; new Server lookup/consumer wiring belongs to the host |
 
-1. Keep the Stack installation and supported provider/configuration choices.
-   Change any dependency pins to the matching branches or reviewed commits.
-2. Keep routes/classification declarations in the Agent, set `server: MyApp.Server`,
-   and move execution callbacks to `use Spectre.Server, tools: MyApp.AI`.
-3. Return the context containing generated helper commands. Handle actual tagged
-   results in `handle_result/3`; there is no synchronous helper result and no import
-   of invented <code>Spectre.Pulse.pulse/3</code> functions.
-4. For consequential work, configure AgentServer allowed operations and consent
-   continuations where required. Installing a package does not authorize end-user
-   effects. Follow the [GAM manifest](https://spectre.guide/en/governed-act-model).
-5. Choose and supervise the actual runtime resources and checkpoint Store. Keep
-   handles outside durable assigns; use portable result/state representations.
-6. Exercise recovery with your application's real scope, storage and provider
-   contracts. A changed checkpoint fingerprint requires an explicit core migration;
-   old Instance snapshots are not automatically AgentServer snapshots.
+Keep routes in the Agent and move execution callbacks to
+`use Spectre.Server, tools: MyApp.AI`. Return the context produced by `pulse`
+and handle its tagged result in `handle_result/3`. The
+[core migration guide](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/MIGRATING_TO_0_4.md) covers shared Server, GAM and
+checkpoint changes; old Instance snapshots are not AgentServer snapshots.
 
 ## What remains available
 
@@ -39,15 +29,8 @@ See the [retained reference](TRANSPORTS_AND_LEGACY_RUNTIME.md) for these APIs an
 is an ownership/API change, not a promise that every legacy convenience now
 implicitly routes through AgentServer or GAM.
 
-## Skill Servers and the shared GAM
+## Skill Servers
 
-A mounted Skill may have a separate Server, state and checkpoint. It automatically
-reuses the root AgentServer's GAM Domain, authority ledger and execution boundary;
-no Skill Host, second Domain or manual ingress is part of this migration. Keep
-root operation permissions and mount `governed:` references aligned. Proposal
-provenance remains recorded, confirmations stay bound to the exact Skill and
-presentation, and timer closure cannot erase a Duty. Parallel workers remain
-subject to the same kernel admission laws.
-
-See [the package integration guide](SPECTRE_0_4.md#mounted-skill-runtimes) and the
-[core Skill ownership and consent contract](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/SKILLS.md).
+Mounted Skills share their root's GAM Domain and retain separate checkpoints.
+Follow the [core Skill guide](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/SKILLS.md); this package requires no separate
+Skill host or second GAM configuration.

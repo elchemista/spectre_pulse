@@ -113,7 +113,6 @@ defmodule Spectre.Pulse.ServerTool do
       project_receipt(receipt)
     else
       {:error, reason} -> {:error, portable_error(reason)}
-      other -> {:error, portable_error(other)}
     end
   rescue
     _ -> {:error, portable_error(:pulse_delivery_exception)}

@@ -45,7 +45,10 @@ The three acts are:
 | `query` | Ask a question |
 | `request` | Ask the recipient to perform work |
 
-Pulse validates structure but never interprets application payload data.
+Ordinary application payloads remain opaque to Pulse. The standard
+`approval.*` types use a dedicated authenticated bridge: Pulse checks their
+envelope shape and routes them to Managed GAM, which validates human consent.
+See [external approvals](EXTERNAL_APPROVALS.md).
 The normative JSON shape is
 [`priv/schema/pulse-envelope-v1.schema.json`](https://github.com/elchemista/spectre_pulse/blob/main/priv/schema/pulse-envelope-v1.schema.json).
 

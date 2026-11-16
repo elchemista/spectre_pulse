@@ -38,6 +38,7 @@ defmodule Spectre.Pulse.Inbound do
          {:ok, envelope} <- Envelope.new(envelope, opts),
          {:ok, canonical_sender, authenticated?} <-
            authenticate_sender(envelope, context, opts),
+         :ok <- Spectre.Pulse.Approval.validate_ingress(envelope, authenticated?),
          {:ok, logical_target} <- resolve_target(envelope.to, context, opts),
          {:ok, config} <- target_config(logical_target, context, opts),
          :ok <- ensure_recipient(envelope.to, config.identity),
@@ -65,7 +66,7 @@ defmodule Spectre.Pulse.Inbound do
          canonical_sender: canonical_sender,
          target: target,
          input: input,
-         turn: if(match?({:server_accepted, _}, turn), do: nil, else: turn),
+         turn: if(match?(%Spectre.Turn{}, turn), do: turn),
          interaction:
            case turn do
              {:server_accepted, id} -> id
@@ -627,7 +628,14 @@ defmodule Spectre.Pulse.Inbound do
   end
 
   @spec run_turn(term(), Spectre.Input.t(), keyword(), Envelope.t()) ::
-          {:ok, Spectre.Turn.t() | {:server_accepted, String.t()}} | {:error, Error.t()}
+          {:ok,
+           Spectre.Turn.t() | {:server_accepted, String.t()} | {:approval_accepted, String.t()}}
+          | {:error, Error.t()}
+  defp run_turn({:agent_server, server}, _input, _turn_opts, %{payload: %{type: type}} = envelope)
+       when type in ~w(approval.request approval.presented approval.decision approval.cancelled) do
+    Spectre.Pulse.Approval.accept(server, envelope)
+  end
+
   defp run_turn({:agent_server, server}, input, _turn_opts, envelope) do
     case Spectre.Server.input(server, %{input | raw: nil}) do
       {:ok, id} -> {:ok, {:server_accepted, id}}

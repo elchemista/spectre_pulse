@@ -40,16 +40,17 @@ defmodule SpectrePulse.GitHubDistributionTest do
         path when is_binary(path) and path != "" ->
           assert {:spectre, opts} = dependency
           assert opts[:path] == Path.expand(path, File.cwd!())
+          assert opts[:override]
           opts
 
         _unset ->
-          assert {:spectre, "~> 0.4.0", opts} = dependency
-          refute Keyword.has_key?(opts, :path)
-          opts
+          assert {:spectre, "~> 0.4.0"} = dependency
+          []
       end
 
-    assert spectre_opts[:override]
     refute Keyword.has_key?(spectre_opts, :github)
-    refute Keyword.has_key?(config, :package)
+    assert config[:package][:licenses] == ["Apache-2.0"]
+    assert "docs" in config[:package][:files]
+    refute "test" in config[:package][:files]
   end
 end
