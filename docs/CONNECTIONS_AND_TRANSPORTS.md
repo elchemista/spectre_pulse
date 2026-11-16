@@ -1,5 +1,9 @@
 # Connections and transports
 
+[Current README](../README.md) · [AgentServer 0.4](SPECTRE_0_4.md) · [Migration](MIGRATING_TO_0_4.md)
+
+Protocol and transport contracts remain supported. Instance, Work/Vigil and Studio runtime sections use their retained APIs; they do not automatically register or govern AgentServers.
+
 Pulse separates logical Agent identity from physical delivery. Agents address
 each other with canonical Pulse addresses; the host application owns sockets,
 URLs, brokers, Erlang nodes, credentials, and transport processes.

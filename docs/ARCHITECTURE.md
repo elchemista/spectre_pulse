@@ -1,5 +1,9 @@
 # Spectre Pulse architecture
 
+[Current README](../README.md) · [AgentServer 0.4](SPECTRE_0_4.md) · [Migration](MIGRATING_TO_0_4.md)
+
+Protocol and transport contracts remain supported. Instance, Work/Vigil and Studio runtime sections use their retained APIs; they do not automatically register or govern AgentServers.
+
 Pulse keeps the network technical and the Agents autonomous:
 
 > Pulse does not coordinate Agents; it enables Agents to coordinate.
@@ -13,7 +17,8 @@ This document describes ownership and internal layers. Use the
 
 | Concern | Owner |
 | --- | --- |
-| Planning and decisions | Spectre Agent |
+| Planning and ordinary application decisions | Spectre Agent |
+| Human consent and admission | Authenticated human consumer and GAM |
 | Authoritative state, memory, and journal | Spectre and host adapters |
 | Ledger, Lab, semantic cache, and skills | Their Spectre extensions |
 | Expectations and semantic retries | Individual Agent state and host policy |
@@ -36,10 +41,16 @@ spectre       ──X spectre_pulse
 ```
 
 Spectre core does not know about Pulse addresses, REST, WebSocket, or connection
-manifests. Pulse maps its protocol into ordinary Spectre Input, Turn, Effect,
-Instance, and State boundaries.
+manifests. The AgentServer bridge enqueues authenticated input into the host
+Server and returns an interaction id. Its bound send helper uses Managed GAM;
+`Spectre.Pulse.Approval` carries the core approval protocol over Envelope v1.
+The retained integration maps ordinary messages to Input, Turn, Effect and
+Instance boundaries. Neither path gives Pulse ownership of runtime state.
 
 ## Layers
+
+The retained Instance/Effect path uses these layers. AgentServer ingress replaces
+the final Turn call with the existing Server input or approval boundary.
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐

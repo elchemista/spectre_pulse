@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/stack-tools-0.4
   pull_request:
   workflow_dispatch:
 
@@ -31,6 +32,72 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check out compatible spectre
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre
+          ref: feature/agent-server-gam
+          path: _compat/spectre
+          persist-credentials: false
+
+      - name: Check out compatible spectre_beam
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_beam
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_beam
+          persist-credentials: false
+
+      - name: Check out compatible spectre_directive
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_directive
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_directive
+          persist-credentials: false
+
+      - name: Check out compatible spectre_kinetic
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_kinetic
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_kinetic
+          persist-credentials: false
+
+      - name: Check out compatible spectre_lens
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_lens
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_lens
+          persist-credentials: false
+
+      - name: Check out compatible spectre_mnemonic
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_mnemonic
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_mnemonic
+          persist-credentials: false
+
+      - name: Check out compatible spectre_prism
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_prism
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_prism
+          persist-credentials: false
+
+      - name: Select compatible dependency sources
+        run: |
+          echo "SPECTRE_PATH=$GITHUB_WORKSPACE/_compat/spectre" >> "$GITHUB_ENV"
+          echo "SPECTRE_BEAM_PATH=$GITHUB_WORKSPACE/_compat/spectre_beam" >> "$GITHUB_ENV"
+          echo "SPECTRE_DIRECTIVE_PATH=$GITHUB_WORKSPACE/_compat/spectre_directive" >> "$GITHUB_ENV"
+          echo "SPECTRE_KINETIC_PATH=$GITHUB_WORKSPACE/_compat/spectre_kinetic" >> "$GITHUB_ENV"
+          echo "SPECTRE_LENS_PATH=$GITHUB_WORKSPACE/_compat/spectre_lens" >> "$GITHUB_ENV"
+          echo "SPECTRE_MNEMONIC_PATH=$GITHUB_WORKSPACE/_compat/spectre_mnemonic" >> "$GITHUB_ENV"
+          echo "SPECTRE_PRISM_PATH=$GITHUB_WORKSPACE/_compat/spectre_prism" >> "$GITHUB_ENV"
+
       - name: Set up Elixir and Erlang/OTP
         uses: erlef/setup-beam@v1
         with:
@@ -57,6 +124,72 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Check out compatible spectre
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre
+          ref: feature/agent-server-gam
+          path: _compat/spectre
+          persist-credentials: false
+
+      - name: Check out compatible spectre_beam
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_beam
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_beam
+          persist-credentials: false
+
+      - name: Check out compatible spectre_directive
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_directive
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_directive
+          persist-credentials: false
+
+      - name: Check out compatible spectre_kinetic
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_kinetic
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_kinetic
+          persist-credentials: false
+
+      - name: Check out compatible spectre_lens
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_lens
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_lens
+          persist-credentials: false
+
+      - name: Check out compatible spectre_mnemonic
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_mnemonic
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_mnemonic
+          persist-credentials: false
+
+      - name: Check out compatible spectre_prism
+        uses: actions/checkout@v6
+        with:
+          repository: elchemista/spectre_prism
+          ref: feature/stack-tools-0.4
+          path: _compat/spectre_prism
+          persist-credentials: false
+
+      - name: Select compatible dependency sources
+        run: |
+          echo "SPECTRE_PATH=$GITHUB_WORKSPACE/_compat/spectre" >> "$GITHUB_ENV"
+          echo "SPECTRE_BEAM_PATH=$GITHUB_WORKSPACE/_compat/spectre_beam" >> "$GITHUB_ENV"
+          echo "SPECTRE_DIRECTIVE_PATH=$GITHUB_WORKSPACE/_compat/spectre_directive" >> "$GITHUB_ENV"
+          echo "SPECTRE_KINETIC_PATH=$GITHUB_WORKSPACE/_compat/spectre_kinetic" >> "$GITHUB_ENV"
+          echo "SPECTRE_LENS_PATH=$GITHUB_WORKSPACE/_compat/spectre_lens" >> "$GITHUB_ENV"
+          echo "SPECTRE_MNEMONIC_PATH=$GITHUB_WORKSPACE/_compat/spectre_mnemonic" >> "$GITHUB_ENV"
+          echo "SPECTRE_PRISM_PATH=$GITHUB_WORKSPACE/_compat/spectre_prism" >> "$GITHUB_ENV"
 
       - name: Set up Elixir and Erlang/OTP
         uses: erlef/setup-beam@v1

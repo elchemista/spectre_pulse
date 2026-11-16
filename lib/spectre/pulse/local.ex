@@ -18,14 +18,15 @@ defmodule Spectre.Pulse.Local do
   @registry Spectre.Pulse.Local.Registry
   @supervisor Spectre.Pulse.Local.Supervisor
 
-  @doc "Subscribes a Pulse-enabled Agent on its compiled logical identity."
+  @doc "Subscribes a Pulse-enabled Agent; explicit endpoint/inbound options rebind its existing local endpoint."
   @spec subscribe(module(), keyword()) :: DynamicSupervisor.on_start_child()
   def subscribe(agent, opts \\ [])
 
   def subscribe(agent, opts) when is_atom(agent) and not is_nil(agent) do
-    with {:ok, identity, _endpoint, _endpoint_opts} <- subscription(agent, opts) do
+    with {:ok, identity, endpoint, endpoint_opts} <- subscription(agent, opts) do
       case lookup(identity) do
         {:ok, pid, %{agent: ^agent}} ->
+          bind_existing_endpoint(pid, endpoint, endpoint_opts, opts)
           {:ok, pid}
 
         {:ok, _pid, metadata} ->
@@ -41,6 +42,11 @@ defmodule Spectre.Pulse.Local do
 
   def subscribe(agent, _opts),
     do: {:error, Error.not_sent(:validation, {:invalid_pulse_agent, agent})}
+
+  defp bind_existing_endpoint(pid, endpoint, endpoint_opts, opts) do
+    if Enum.any?([:endpoint, :inbound, :on_result], &Keyword.has_key?(opts, &1)),
+      do: GenServer.call(pid, {:bind_endpoint, endpoint, endpoint_opts})
+  end
 
   @doc "Returns the Registry name used by one canonical local subscription."
   @spec via(String.t()) :: {:via, Registry, {module(), String.t()}}

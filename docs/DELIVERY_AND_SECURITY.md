@@ -1,5 +1,9 @@
 # Delivery semantics and security
 
+[Current README](../README.md) · [AgentServer 0.4](SPECTRE_0_4.md) · [Migration](MIGRATING_TO_0_4.md)
+
+Protocol and transport contracts remain supported. Instance, Work/Vigil and Studio runtime sections use their retained APIs; they do not automatically register or govern AgentServers.
+
 Pulse separates message meaning, technical delivery, authenticated connection
 facts, and Agent policy. Read this guide before exposing an Agent over a network.
 
@@ -41,7 +45,10 @@ The three acts are:
 | `query` | Ask a question |
 | `request` | Ask the recipient to perform work |
 
-Pulse validates structure but never interprets application payload data.
+Ordinary application payloads remain opaque to Pulse. The standard
+`approval.*` types use a dedicated authenticated bridge: Pulse checks their
+envelope shape and routes them to Managed GAM, which validates human consent.
+See [external approvals](EXTERNAL_APPROVALS.md).
 The normative JSON shape is
 [`priv/schema/pulse-envelope-v1.schema.json`](https://github.com/elchemista/spectre_pulse/blob/main/priv/schema/pulse-envelope-v1.schema.json).
 

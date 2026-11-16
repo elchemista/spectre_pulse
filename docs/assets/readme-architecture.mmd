@@ -1,0 +1,10 @@
+sequenceDiagram
+  participant C as Customer Server + GAM
+  participant O as Personal Server + GAM
+  actor H as Human / trusted chat
+  C->>O: Pulse approval.request
+  O->>H: Show the frozen presentation
+  O-->>C: Pulse signed approval.presented
+  H->>O: Explicit confirm or reject
+  O-->>C: Pulse signed approval.decision
+  C->>C: Verify authority, expiry and one-use proof

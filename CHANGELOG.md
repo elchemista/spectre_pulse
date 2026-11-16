@@ -1,29 +1,32 @@
 # Changelog
 
-## Unreleased
+## Unreleased — Spectre 0.4
 
-- Add multi-Agent connection definitions, authenticated live-connection
-  tracking, scoped Agent exposure, remote discovery descriptors, and public
-  Studio-oriented catalog APIs.
-- Add a credential-free handshake boundary and a zero-dependency Phoenix
-  WebSocket integration that reuses the host Endpoint and HTTP server.
-- Add scoped, bounded OTP runtime inspection for live Agent Instances without
-  exposing mailbox contents, process dictionaries, or GenServer state.
-- Add scoped, bounded Work and Vigil snapshots plus runtime-controlled
-  near-realtime Studio subscriptions backed by Spectre 0.3.2 operation views.
-- Target Spectre 0.3.2, harden Phoenix error frames against internal-data
-  disclosure, and validate the integration with a real Phoenix application.
-- Keep Phoenix WebSockets alive with bounded server pings and preserve safe
-  request correlation when a monitor enable fails before subscription creation.
-- Add a connection-terminated, explicitly scoped Studio bridge for semantic
-  cache review/promotion, persisted turn journals, Skill inventory and governed
-  Morph proposal evaluation.
-- Add a separately scoped semantic-cache update operation that edits mutable
-  online rows and resolves labels only from the Agent's cacheable rules.
-- Project every requested semantic-cache source with bounded paging, source
-  inventory and searchability metadata so hosts do not need transport rewrites.
-- Align the package, Stack metadata and compatibility documentation with
-  Spectre 0.3.4 and refresh all compatible dependencies.
+### Added
+
+- Stack-generated protocol/contact inspection and explicitly bound governed sends
+  through AgentServer; authenticated inbound delivery to an existing Server.
+- `Spectre.Pulse.Approval` carries external human requests, signed presentation
+  acknowledgements and decisions, and cancellations over Envelope v1.
+- Local subscriptions can bind an existing endpoint to its live AgentServer.
+- Confirm/reject integration tests across independent Domains using local delivery
+  and authenticated loopback REST.
+
+### Changed
+
+- Pin sender and command identity in governed sends, bound portable errors and
+  preserve uncertain delivery outcomes for GAM reconciliation.
+- Target Spectre `~> 0.4.0`; CI and contributors can select matching local sources.
+- Publish protocol, migration, approval and transport guides with the package.
+
+### Compatibility
+
+- Envelope v1, discovery and transport semantics remain unchanged. A technical
+  acceptance receipt never means human consent or remote business completion.
+- Retain Instance/Work/Vigil/Studio APIs, connection manifests, scoped Phoenix
+  monitoring and Studio inspection. These do not implicitly register AgentServers.
+- Hosts continue to own transport authentication, scopes, key provisioning,
+  storage policy and Phoenix Endpoint lifecycle.
 
 ## 0.3.0 — 2026-08-13
 

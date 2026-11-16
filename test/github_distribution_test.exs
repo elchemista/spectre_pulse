@@ -10,7 +10,7 @@ defmodule SpectrePulse.GitHubDistributionTest do
     spectre_prism: "spectre_prism"
   }
 
-  test "core uses the selected source while unpublished satellites stay on GitHub" do
+  test "core and satellites use explicit local overrides or their published source" do
     config = Mix.Project.config()
     deps = Keyword.fetch!(config, :deps)
 
@@ -18,8 +18,18 @@ defmodule SpectrePulse.GitHubDistributionTest do
       dependency = Enum.find(deps, &(elem(&1, 0) == name))
 
       assert {^name, opts} = dependency
-      assert opts[:github] == "elchemista/#{repository}"
-      refute Keyword.has_key?(opts, :path)
+      variable = name |> Atom.to_string() |> String.upcase() |> Kernel.<>("_PATH")
+
+      case System.get_env(variable) do
+        path when is_binary(path) and path != "" ->
+          assert opts[:path] == Path.expand(path, File.cwd!())
+          refute Keyword.has_key?(opts, :github)
+
+        _ ->
+          assert opts[:github] == "elchemista/#{repository}"
+          refute Keyword.has_key?(opts, :path)
+      end
+
       refute Keyword.has_key?(opts, :hex)
     end)
 
@@ -30,16 +40,17 @@ defmodule SpectrePulse.GitHubDistributionTest do
         path when is_binary(path) and path != "" ->
           assert {:spectre, opts} = dependency
           assert opts[:path] == Path.expand(path, File.cwd!())
+          assert opts[:override]
           opts
 
         _unset ->
-          assert {:spectre, "~> 0.3.4", opts} = dependency
-          refute Keyword.has_key?(opts, :path)
-          opts
+          assert {:spectre, "~> 0.4.0"} = dependency
+          []
       end
 
-    assert spectre_opts[:override]
     refute Keyword.has_key?(spectre_opts, :github)
-    refute Keyword.has_key?(config, :package)
+    assert config[:package][:licenses] == ["Apache-2.0"]
+    assert "docs" in config[:package][:files]
+    refute "test" in config[:package][:files]
   end
 end

@@ -1,290 +1,163 @@
 # Spectre Pulse
 
-Spectre Pulse connects autonomous [Spectre](https://github.com/elchemista/spectre)
-Agents through one transport-independent protocol. The same Agent can communicate
-locally, through Phoenix WebSocket, REST, PubSub, distributed Erlang, or a custom
-adapter without changing its message semantics.
+Pulse is a transport-independent protocol for communicating agents: canonical
+addresses, versioned envelopes, discovery, transports, authenticated ingress and
+technical delivery receipts. Native protocol and transport APIs remain useful
+without an AgentServer. Phoenix WebSocket, REST, PubSub and distributed Erlang
+adapters share these message semantics.
 
-Pulse also provides the connection and control boundary used by Spectre Studio:
-one authenticated Phoenix WebSocket can expose several Agents, advertise what is
-available, carry Agent-to-Agent messages, and stream temporary OTP and Work/Vigil
-monitoring when Studio asks for it.
+With Spectre 0.4, a Stack supplies the `pulse` helper, an Agent supplies routes,
+and the AgentServer owns the conversation. Protocol/contact inspection is a
+cognitive command; an explicitly bound send becomes a GAM proposal. Existing
+Instance and Studio integrations remain available as separate runtime surfaces.
 
-```text
-Spectre Studio / remote Agent
-              │
-              │ authenticated WebSocket (WSS)
-              ▼
-      Pulse connection manifest
-        ├── exposed Agents
-        ├── granted scopes
-        ├── Agent messages
-        ├── OTP runtime subscriptions
-        ├── Work and Vigil subscriptions
-        └── scoped Studio inspection
-              ├── semantic-cache review / promotion
-              ├── persisted turn journal
-              ├── Skill inventory
-              └── governed Morph proposals
-              │
-              ▼
-    Spectre Agent Instances, operational loops, and OTP processes
-```
+## Installation on the 0.4 development branch
 
-## What Pulse owns
-
-Pulse owns the common technical boundary:
-
-- canonical Agent addresses and immutable versioned envelopes;
-- authenticated connection manifests and per-connection Agent exposure;
-- discovery and delivery through replaceable transports;
-- safe inbound validation and technical receipts;
-- scoped, temporary OTP and Work/Vigil monitoring for Studio;
-- bounded semantic-cache, turn-journal, Skill and Morph Studio operations.
-
-Pulse does not own Agent reasoning, memory, ledgers, semantic cache, tasks,
-workflows, journals, or application authorization policy. Those remain in
-Spectre and its extensions. Pulse exposes only bounded scoped projections and
-transports their results.
-
-## Installation
-
-Pulse targets Spectre `0.3.4` and Elixir 1.19 or later:
+This branch targets the **unreleased Spectre 0.4 architecture**. Use matching Git
+branches; the examples do not assume that Spectre 0.4 is available from Hex.
+For reproducible deployments, replace branch selectors with reviewed commit refs.
 
 ```elixir
 def deps do
   [
-    {:spectre, "~> 0.3.4"},
-    {:spectre_pulse, github: "elchemista/spectre_pulse", branch: "main"}
+    {:spectre, github: "elchemista/spectre",
+     branch: "feature/agent-server-gam", override: true},
+    {:spectre_pulse, github: "elchemista/spectre_pulse",
+     branch: "feature/stack-tools-0.4"}
   ]
 end
 ```
 
-## Phoenix WebSocket
+The core requirement `~> 0.4.0` describes compatibility; use these source
+branches until the matching packages are available. For local development, see
+[Contributing](#contributing).
 
-Phoenix is the shortest path to connect Spectre Studio or remote Agents. Pulse
-uses the Phoenix application's existing Endpoint and WebSocket server; it does
-not add Phoenix as a dependency.
-
-Define a transport module:
+## Discover the protocol in AgentServer
 
 ```elixir
-defmodule MyAppWeb.PulseSocket do
-  use Spectre.Pulse.Phoenix, connection: :studio
+defmodule MyApp.AI do
+  use Spectre.Stack
+  install Spectre.Pulse
 end
-```
 
-Mount it on the Endpoint:
+defmodule MyApp.SupportServer do
+  use Spectre.Server, tools: MyApp.AI
 
-```elixir
-socket "/pulse", MyAppWeb.PulseSocket,
-  websocket: [connect_info: [:peer_data, :uri]],
-  longpoll: false
-```
+  def handle_flow({:support, :protocol}, _input, ctx),
+    do: pulse(ctx, {:protocol}, on_result: :protocol)
 
-Start Pulse with one authenticated connection definition:
+  def handle_result(:protocol, {:ok, protocol}, ctx),
+    do: respond(ctx, "#{protocol.name} version #{protocol.version}")
 
-```elixir
-children = [
-  {Spectre.Pulse,
-   connections: [
-     [
-       id: :studio,
-       transport: :websocket,
-       mode: :listen,
-       agents: :all,
-       authenticate: &MyApp.PulseAccess.authenticate/2,
-       authorize: &MyApp.PulseAccess.authorize/2,
-       scopes: [
-         "agent.runtime.read",
-         "agent.runtime.stream",
-         "agent.operations.read",
-         "agent.operations.stream"
-       ] ++ Spectre.Pulse.Studio.scopes()
-     ]
-   ]},
-  MyAppWeb.Endpoint
-]
-```
+  def handle_result(tag, result, ctx), do: super(tag, result, ctx)
+end
 
-Phoenix serves the connection at `/pulse/websocket`. Under an HTTPS Endpoint it
-is automatically available through `wss://`; certificates and TLS termination
-remain normal Phoenix/Bandit infrastructure.
-
-The generated transport sends a bounded 25-second WebSocket heartbeat, keeping
-the socket below Phoenix's default inbound-idle timeout. The interval is
-configurable on `use Spectre.Pulse.Phoenix` for stricter proxy infrastructure.
-
-After authentication Pulse immediately sends a credential-free manifest with
-the connection, granted scopes, and exposed Agents. The same socket then accepts
-ordinary Pulse envelopes and Studio control calls. See the complete
-[Phoenix integration guide](docs/PHOENIX.md), including authentication, WSS,
-multiple Agent sets, and lifecycle behavior.
-
-Semantic cache, Journal/turns, Skills and Morph require explicit grants from
-both the principal and `authorize/2`. See
-[Studio inspection and governance](docs/STUDIO_INSPECTION.md) for the operation
-contract and its security boundaries.
-
-## Define an Agent
-
-An Agent declares a logical identity and the Pulse payload types accepted by its
-normal Spectre flows:
-
-```elixir
-defmodule MyApp.Researcher do
-  use Spectre.Agent
-  use Spectre.Pulse
-
-  pulsing do
-    identity("spectre://acme/researcher")
-    advertise(capabilities: [:research])
-  end
-
-  flow :remote_requests do
-    on :research, pulse: "research.perform" do
-      run(:research)
-    end
-  end
-
-  def research(input, _context) do
-    "accepted: #{input.text}"
+defmodule MyApp.SupportAgent do
+  use Spectre.Agent, stack: MyApp.AI, server: MyApp.SupportServer
+  flow :support do
+    on :protocol, regex: ~r/^protocol$/i
   end
 end
 ```
 
-The sender knows only a logical contact. It does not know whether the recipient
-is local or reached through WebSocket, REST, gRPC, or another transport:
+Start it with `Spectre.Server.start_link(agent: MyApp.SupportAgent, consumer:
+self())` and submit `Spectre.Server.input(server, "protocol")`. The helper returns
+through `handle_result/3`; it is generated from the Stack, not imported from Pulse.
+
+## Send an agent message
+
+Add `bind: [send: :notify_agent]` to the installation and enable `:notify_agent`
+in the root Server's `gam:` operations. Spectre owns the automatic GAM connection
+and registered execution. Then stage the message from a Server callback:
 
 ```elixir
-pulsing do
-  identity("spectre://acme/coordinator")
-  contact(:researcher, "spectre://acme/researcher")
-end
-
-flow :delegation do
-  on :delegate, regex: ~r/^research:/ do
-    pulse(:researcher,
-      act: :request,
-      type: "research.perform",
-      build: :research_request
-    )
-  end
-end
+pulse(ctx,
+  {:send, %{to: "spectre://research/reviewer", act: :inform,
+            payload: %{type: "research.completed", data: %{report_id: "r-42"}}}},
+  on_result: :notified)
 ```
 
-`pulse/2` stages a normal Spectre Effect. The explicit side-effect boundary sends
-it:
+Payload types use protocol names such as `research.completed`, not MIME types
+such as `text/plain`. Pulse pins the sender from the Agent configuration and the
+message id from the admitted command. The host owns network/discovery configuration,
+recipient authorization, consent when required, and reconciliation of uncertain sends.
+A technical `:accepted` receipt does not prove that the remote task completed.
+
+For authenticated inbound messages, the transport host selects the existing
+Server and calls `Spectre.Pulse.receive(envelope, trusted_context,
+agent_server: server)`. Acceptance returns `result.interaction`; replies arrive
+asynchronously through the Server consumer. Do not derive authenticated identity
+from an unverified `envelope.from`. The [integration guide](docs/SPECTRE_0_4.md)
+spells out this boundary and the retained legacy paths.
+
+## Ask a human through their personal agent
+
+For example, a customer agent can require your consent before opening a browser.
+Pulse delivers the frozen request to your personal AgentServer; its authenticated
+chat consumer shows it to you. Managed GAM verifies your signed choice under the
+customer's original permissions before deciding whether execution can proceed.
+
+![Spectre Pulse: Ask a human through their personal agent](docs/assets/readme-architecture.svg)
+
+[Diagram source](docs/assets/readme-architecture.mmd).
+
+In the personal Server's configured consumer, acknowledge rendering and submit
+only the human's explicit choice for that exact request:
 
 ```elixir
-{:ok, turn} = Spectre.turn(MyApp.Coordinator, "research:nautical market")
-{:ok, result} = Spectre.execute(MyApp.Coordinator, turn.result)
+reference = %{id: request["id"], from: request["from"]}
+:ok = Spectre.Server.approval_presented(personal_server, reference)
+# After the human chooses Approve; use :reject for refusal.
+:ok = Spectre.Server.approval_decide(personal_server, reference, :confirm)
 ```
 
-For a complete local example run:
-
-```console
-mix run examples/local_agents.exs
-```
-
-The [getting started guide](docs/GETTING_STARTED.md) explains Stack installation,
-contacts, inbound flows, Subject-scoped Instances, correlation, and execution.
-
-## Studio monitoring is runtime-controlled
-
-Realtime monitoring is not enabled in application configuration. Configuration
-only defines which scopes a connection may grant. A Studio LiveView opens a
-temporary subscription when the operator starts watching an Agent:
-
-```json
-{
-  "pulse": "connection",
-  "version": 1,
-  "type": "agent.runtime.monitor.enable",
-  "request_id": "liveview-panel-42",
-  "agent_address": "spectre://acme/researcher",
-  "subject": "account-123",
-  "interval_ms": 1000,
-  "duration_ms": 60000,
-  "fields": ["memory", "message_queue_len", "reductions", "status"]
-}
-```
-
-Pulse returns snapshot sequence `0`, pushes subsequent updates on the same
-WebSocket, and stops when Studio sends `agent.runtime.monitor.disable`, the
-duration expires, or the socket disconnects. Remote monitoring requires both
-`agent.runtime.read` and `agent.runtime.stream`.
-
-Work and Vigil monitoring uses the same runtime-controlled lifecycle with the
-separate `agent.operations.read` and `agent.operations.stream` scopes:
-
-```json
-{
-  "pulse": "connection",
-  "version": 1,
-  "type": "agent.operations.monitor.enable",
-  "agent_address": "spectre://acme/researcher",
-  "subject": "account-123",
-  "interval_ms": 1000,
-  "kinds": ["work", "vigil"]
-}
-```
-
-See [OTP runtime monitoring](docs/STUDIO_MONITORING.md) and
-[Work and Vigil monitoring](docs/STUDIO_OPERATIONS.md) for frames, permissions,
-limits, events, and LiveView lifecycle recommendations.
-
-## Connections and transports
-
-One connection can expose all discovered Agents or an explicit subset. Several
-connections can expose overlapping Agent sets with different transports,
-principals, and scopes:
-
-```elixir
-connections: [
-  [id: :studio, transport: :websocket, agents: :all],
-  [id: :private, transport: :grpc, agents: [MyApp.Researcher], scopes: []]
-]
-```
-
-Pulse provides Local, WebSocket, REST, PubSub, and BEAM-node bindings. A custom
-transport implements one behavior and receives the same validated envelope;
-discovery, correlation, permissions, receipts, and Agent logic remain common.
-
-See [connections and transports](docs/CONNECTIONS_AND_TRANSPORTS.md) for
-connection specs, discovery, route priorities, built-in adapters, REST inbound,
-and custom transport implementation.
-
-## Protocol and delivery guarantees
-
-Pulse v1 uses one sender, one recipient, a UUIDv7 message id, one communicative
-act (`inform`, `query`, or `request`), a namespaced payload type, and optional
-causal correlation through `relates_to`.
-
-A receipt means that the selected transport accepted the envelope. It does not
-mean the remote Agent completed the semantic work. Delivery can be duplicated or
-arrive out of order. Pulse retries another route only after a failure known to be
-`not_sent`; it stops on `outcome_unknown` to avoid silently duplicating work.
-
-Read [delivery and security](docs/DELIVERY_AND_SECURITY.md) before exposing an
-Agent across a network. The JSON envelope schema is
-[`priv/schema/pulse-envelope-v1.schema.json`](https://github.com/elchemista/spectre_pulse/blob/main/priv/schema/pulse-envelope-v1.schema.json).
+Select `{Spectre.Pulse.Approval, []}` as `gam.approvals.transport` on both Servers.
+The [two-agent approval recipe](docs/EXTERNAL_APPROVALS.md) covers identities,
+keys, local subscriptions and authenticated remote delivery. The AI never obtains
+the human signing authority, and Pulse `accepted` receipts never count as consent.
 
 ## Documentation
 
-| Guide | Use it for |
-| --- | --- |
-| [Getting started](docs/GETTING_STARTED.md) | Agent authoring, Stack setup, local messaging, Instances, contacts |
-| [Phoenix integration](docs/PHOENIX.md) | Endpoint setup, authentication, WSS, manifests, socket lifecycle |
-| [OTP runtime monitoring](docs/STUDIO_MONITORING.md) | Process snapshots, enable/disable calls, safe fields, limits |
-| [Work and Vigil monitoring](docs/STUDIO_OPERATIONS.md) | Active loops, publication-safe views, realtime Studio subscriptions |
-| [Connections and transports](docs/CONNECTIONS_AND_TRANSPORTS.md) | Multi-Agent connections, discovery, REST, PubSub, BEAM, custom adapters |
-| [Delivery and security](docs/DELIVERY_AND_SECURITY.md) | Trust boundaries, receipts, retries, correlation, common failures |
-| [Architecture](docs/ARCHITECTURE.md) | Ownership boundaries and internal design |
-| [Public API](docs/PUBLIC_API.md) | Normative supported modules and callables |
+- [External human approvals between AgentServers](docs/EXTERNAL_APPROVALS.md)
+- [AgentServer integration, helpers and authority](docs/SPECTRE_0_4.md)
+- [Migration from the 0.3 integration](docs/MIGRATING_TO_0_4.md)
+- [Standalone and retained runtime reference](docs/TRANSPORTS_AND_LEGACY_RUNTIME.md)
+- [Public API](docs/PUBLIC_API.md) and [changelog](CHANGELOG.md)
+- [Governed Act Model](https://spectre.guide/en/governed-act-model) and [core tool lifecycle](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/STACK_TOOLS.md)
 
-The transport-independent protocol description is also available at runtime:
+## Use inside a reusable Skill
 
-```elixir
-Spectre.Pulse.protocol()
+The generated `pulse` helper also works in Skill Server callbacks using the same
+Stack. Each mount has its own process, state and checkpoint; governed operations
+share the root AgentServer's GAM Domain and must satisfy both root operations
+and mount `governed:` permissions. See the
+[core Skill guide](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/SKILLS.md) for ownership and consent.
+
+## Contributing
+
+Use Elixir 1.19 and OTP 28. For sibling 0.4 checkouts, select the sources explicitly:
+
+```sh
+export SPECTRE_PATH=../spectre
+export SPECTRE_BEAM_PATH=../spectre_beam
+export SPECTRE_DIRECTIVE_PATH=../spectre_directive
+export SPECTRE_KINETIC_PATH=../spectre_kinetic
+export SPECTRE_LENS_PATH=../spectre_lens
+export SPECTRE_MNEMONIC_PATH=../spectre_mnemonic
+export SPECTRE_PRISM_PATH=../spectre_prism
+mix deps.get
+mix test
+mix credo
+mix dialyzer
+mix docs --warnings-as-errors
 ```
+
+Satellite packages are test-only dependencies for ecosystem conformance. Without
+path overrides, the manifest selects their compatible Git branches. Phoenix
+integration tests use a host fixture; Pulse adds no Phoenix runtime dependency.
+
+## Examples
+
+The [LiveView playground](https://github.com/elchemista/demo_spectre) demonstrates
+Spectre and its packages. [spectre.guide](https://spectre.guide) explains GAM and
+provides usage articles. Package versions are independent of Spectre core.

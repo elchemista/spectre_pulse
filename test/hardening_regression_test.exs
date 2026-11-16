@@ -360,7 +360,7 @@ defmodule Spectre.Pulse.HardeningRegressionTest do
     assert {:error, %Error{reason: {:invalid_rest_url, <<255>>}}} =
              REST.deliver(%{rest_route | target: <<255>>}, envelope, [])
 
-    assert {:error, %Error{reason: {:invalid_http_url, ":"}}} =
+    assert {:error, %Error{reason: {:invalid_http_url, _invalid_host}, outcome: :not_sent}} =
              REST.deliver(%{rest_route | target: "http://[x]/messages"}, envelope, [])
 
     assert {:error, %Error{reason: {:invalid_rest_timeout, 0}}} =

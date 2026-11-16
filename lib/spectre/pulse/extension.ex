@@ -98,7 +98,7 @@ defmodule Spectre.Pulse.Extension do
 
   @spec validate_stack_config(term()) :: :ok | {:error, term()}
   defp validate_stack_config(config) when is_map(config) do
-    unknown = Map.keys(config) -- [:directory, :transports]
+    unknown = Map.keys(config) -- [:directory, :transports, :options]
 
     with [] <- unknown,
          :ok <- validate_stack_directory(Map.get(config, :directory)),
