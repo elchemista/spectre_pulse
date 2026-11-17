@@ -1,12 +1,14 @@
 defmodule Spectre.Pulse.ServerToolTest do
   use ExUnit.Case, async: true
-  alias Spectre.Pulse.{Config, Envelope, ServerTool}
+  alias Spectre.GAM.Canonical.Value
+  alias Spectre.Pulse.{Config, Envelope, Error, Receipt, ServerTool}
+  alias Spectre.Stack.Effects
 
   test "managed message registration remains opt-in" do
     assert %{} = Spectre.Pulse.effects(%{})
     effects = Spectre.Pulse.effects(%{options: [bind: [send: :send_agent_message]]})
     assert %{send_agent_message: %{adapter: ServerTool, operation: :send}} = effects
-    assert Spectre.Stack.Effects.validate!(effects) == effects
+    assert Effects.validate!(effects) == effects
   end
 
   defmodule DeliveryNetwork do
@@ -15,7 +17,13 @@ defmodule Spectre.Pulse.ServerToolTest do
 
       case Process.get({__MODULE__, :result}) do
         nil ->
-          {:ok, Spectre.Pulse.Receipt.accepted(envelope.id, via: :fixture, route_id: "fixture")}
+          {:ok, Receipt.accepted(envelope.id, via: :fixture, route_id: "fixture")}
+
+        {:raise, message} ->
+          raise message
+
+        {:throw, reason} ->
+          throw(reason)
 
         result ->
           result
@@ -25,7 +33,11 @@ defmodule Spectre.Pulse.ServerToolTest do
 
   defmodule DeliveryAgent do
     def __spectre_pulse__ do
-      Spectre.Pulse.Config.new!(identity: "spectre://test/sender", network: DeliveryNetwork)
+      Config.new!(
+        identity: "spectre://test/sender",
+        network: DeliveryNetwork,
+        contacts: [%{key: :receiver, identity: "spectre://test/receiver"}]
+      )
     end
   end
 
@@ -55,7 +67,7 @@ defmodule Spectre.Pulse.ServerToolTest do
     assert {:ok, {:ok, %{name: "spectre-pulse"} = protocol}} =
              ServerTool.project(:protocol, ServerTool.invoke(:protocol, %{}, %{}))
 
-    assert :ok = Spectre.GAM.Canonical.Value.validate(protocol)
+    assert :ok = Value.validate(protocol)
     refute Map.has_key?(Spectre.Pulse.tools(%{}).pulse.operations, :send)
   end
 
@@ -127,7 +139,7 @@ defmodule Spectre.Pulse.ServerToolTest do
     Process.put(
       {DeliveryNetwork, :result},
       {:error,
-       Spectre.Pulse.Error.outcome_unknown(:transport, %{
+       Error.outcome_unknown(:transport, %{
          pid: self(),
          huge: String.duplicate("private", 5000)
        })}
@@ -140,13 +152,13 @@ defmodule Spectre.Pulse.ServerToolTest do
              })
 
     assert_received {:pulse_delivery_attempt, _}
-    assert :ok = Spectre.GAM.Canonical.Value.validate(error, max_bytes: 4096)
+    assert :ok = Value.validate(error, max_bytes: 4096)
     refute inspect(error) =~ "private"
 
     assert {:ok, {:error, %{outcome: :outcome_unknown} = projected}} =
              ServerTool.project(:send, {:error, self()})
 
-    assert :ok = Spectre.GAM.Canonical.Value.validate(projected, max_bytes: 4096)
+    assert :ok = Value.validate(projected, max_bytes: 4096)
   end
 
   test "binding typos, duplicates, nil and non-atom operations fail during installation" do
@@ -161,5 +173,83 @@ defmodule Spectre.Pulse.ServerToolTest do
         Spectre.Pulse.tools(%{options: [bind: bindings]})
       end
     end
+  end
+
+  test "governed sends distinguish delivery success, definite rejection and uncertainty" do
+    args = %{to: "spectre://test/receiver", payload: %{type: "support.message", data: "Hi"}}
+    context = %{agent: DeliveryAgent, command_id: Spectre.Identity.uuid7()}
+
+    assert {:ok, %{status: :accepted}} = ServerTool.execute_effect(:send, args, context)
+
+    Process.put(
+      {DeliveryNetwork, :result},
+      {:error, Error.not_sent(:routing, :offline)}
+    )
+
+    assert {:error, :definitive_no_effect, %{outcome: :not_sent}} =
+             ServerTool.execute_effect(:send, args, context)
+
+    Process.put(
+      {DeliveryNetwork, :result},
+      {:error, Error.outcome_unknown(:transport, :disconnected)}
+    )
+
+    assert {:error, :ambiguous, %{outcome: :outcome_unknown}} =
+             ServerTool.execute_effect(:send, args, context)
+
+    assert {:error, :definitive_no_effect, :invalid_pulse_effect} =
+             ServerTool.execute_effect(:unknown, args, context)
+  end
+
+  test "a host transport crash or throw never escapes the governed effect boundary" do
+    args = %{to: "spectre://test/receiver", payload: %{type: "support.message", data: "Hi"}}
+    context = %{agent: DeliveryAgent, command_id: Spectre.Identity.uuid7()}
+
+    for failure <- [{:raise, "private transport details"}, {:throw, {:private, self()}}] do
+      Process.put({DeliveryNetwork, :result}, failure)
+
+      assert {:error, :ambiguous, error} = ServerTool.execute_effect(:send, args, context)
+      assert :ok = Value.validate(error)
+      refute inspect(error) =~ "private"
+    end
+  end
+
+  test "invalid tool requests and receipts cannot become successful portable results" do
+    assert {:error, :invalid_pulse_tool_request} = ServerTool.prepare(:send, [], %{})
+    assert {:error, :invalid_pulse_tool_result} = ServerTool.project(:send, :unexpected)
+
+    assert {:error, %{outcome: :not_sent}} =
+             ServerTool.prepare(:send, [%{to: "invalid", payload: %{type: "support.message"}}], %{
+               agent: DeliveryAgent
+             })
+
+    id = Spectre.Identity.uuid7()
+    receipt = Receipt.accepted(id, via: :fixture, route_id: self())
+    Process.put({DeliveryNetwork, :result}, {:ok, receipt})
+
+    assert {:error, :ambiguous, %{message: ":invalid_pulse_receipt"}} =
+             ServerTool.execute_effect(
+               :send,
+               %{to: "spectre://test/receiver", payload: %{type: "support.message"}},
+               %{agent: DeliveryAgent, command_id: id}
+             )
+  end
+
+  test "contact discovery projects only the public contact fields" do
+    assert {:ok, %{}} = ServerTool.prepare(:contacts, [], %{})
+
+    assert {:ok, [contact]} =
+             ServerTool.invoke(:contacts, %{}, %{
+               service_context: %{agent: DeliveryAgent}
+             })
+
+    assert contact == %{
+             key: :receiver,
+             identity: "spectre://test/receiver",
+             display_name: nil,
+             capabilities: []
+           }
+
+    assert {:ok, {:ok, [^contact]}} = ServerTool.project(:contacts, {:ok, [contact]})
   end
 end

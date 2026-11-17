@@ -28,19 +28,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out compatible spectre
-        uses: actions/checkout@v6
-        with:
-          repository: elchemista/spectre
-          ref: affe0b6ee33c957bc9aff9eec70cf7e7c33e80d6
-          path: _compat/spectre
-          persist-credentials: false
-
       - name: Check out compatible spectre_beam
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_beam
-          ref: 88e8b017ce3d94dd4f0a2d8743ce767e1fe2ff17
+          ref: 4ecb9154d52dad48982c4d1098698281a9a13982
           path: _compat/spectre_beam
           persist-credentials: false
 
@@ -48,7 +40,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_directive
-          ref: 3972944a0d42720896b3ca2a6ef68633a4fe1bac
+          ref: 83eb717cda08f1392555300def8c62820e52d14f
           path: _compat/spectre_directive
           persist-credentials: false
 
@@ -56,7 +48,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_kinetic
-          ref: 30896afb013eac6c3230465a24dcc15fef800750
+          ref: ee72c4924405328630e807893b23135e25c04511
           path: _compat/spectre_kinetic
           persist-credentials: false
 
@@ -64,7 +56,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_lens
-          ref: e264af2fd48ac45976f2d3c7a6eb62dea4e41f9a
+          ref: 5cbab6e889519c98ae779a81774860f3027b5a98
           path: _compat/spectre_lens
           persist-credentials: false
 
@@ -72,7 +64,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_mnemonic
-          ref: 9dc95657976254c14189af63fa651b5ab5726a6e
+          ref: 4243d342bbf3023435f9c24b85161789d9047772
           path: _compat/spectre_mnemonic
           persist-credentials: false
 
@@ -80,14 +72,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_prism
-          ref: 877a252bd539927ed652ad2d7876e9b6f961a6ae
+          ref: 4862c4f6fbfe94a449451ec3bd7ebe340766ff4f
           path: _compat/spectre_prism
           persist-credentials: false
 
       - name: Select compatible dependency sources
         run: |
           {
-            echo "SPECTRE_PATH=$GITHUB_WORKSPACE/_compat/spectre"
             echo "SPECTRE_BEAM_PATH=$GITHUB_WORKSPACE/_compat/spectre_beam"
             echo "SPECTRE_DIRECTIVE_PATH=$GITHUB_WORKSPACE/_compat/spectre_directive"
             echo "SPECTRE_KINETIC_PATH=$GITHUB_WORKSPACE/_compat/spectre_kinetic"
@@ -108,6 +99,9 @@ jobs:
       - name: Run tests
         run: mix test
 
+      - name: Verify published Spectre dependency
+        run: mix deps | grep -E '^\* spectre 0\.4\.[0-9]+ \(Hex package\)'
+
       - name: Run Credo (non-strict)
         run: mix credo
 
@@ -123,19 +117,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out compatible spectre
-        uses: actions/checkout@v6
-        with:
-          repository: elchemista/spectre
-          ref: affe0b6ee33c957bc9aff9eec70cf7e7c33e80d6
-          path: _compat/spectre
-          persist-credentials: false
-
       - name: Check out compatible spectre_beam
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_beam
-          ref: 88e8b017ce3d94dd4f0a2d8743ce767e1fe2ff17
+          ref: 4ecb9154d52dad48982c4d1098698281a9a13982
           path: _compat/spectre_beam
           persist-credentials: false
 
@@ -143,7 +129,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_directive
-          ref: 3972944a0d42720896b3ca2a6ef68633a4fe1bac
+          ref: 83eb717cda08f1392555300def8c62820e52d14f
           path: _compat/spectre_directive
           persist-credentials: false
 
@@ -151,7 +137,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_kinetic
-          ref: 30896afb013eac6c3230465a24dcc15fef800750
+          ref: ee72c4924405328630e807893b23135e25c04511
           path: _compat/spectre_kinetic
           persist-credentials: false
 
@@ -159,7 +145,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_lens
-          ref: e264af2fd48ac45976f2d3c7a6eb62dea4e41f9a
+          ref: 5cbab6e889519c98ae779a81774860f3027b5a98
           path: _compat/spectre_lens
           persist-credentials: false
 
@@ -167,7 +153,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_mnemonic
-          ref: 9dc95657976254c14189af63fa651b5ab5726a6e
+          ref: 4243d342bbf3023435f9c24b85161789d9047772
           path: _compat/spectre_mnemonic
           persist-credentials: false
 
@@ -175,14 +161,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_prism
-          ref: 877a252bd539927ed652ad2d7876e9b6f961a6ae
+          ref: 4862c4f6fbfe94a449451ec3bd7ebe340766ff4f
           path: _compat/spectre_prism
           persist-credentials: false
 
       - name: Select compatible dependency sources
         run: |
           {
-            echo "SPECTRE_PATH=$GITHUB_WORKSPACE/_compat/spectre"
             echo "SPECTRE_BEAM_PATH=$GITHUB_WORKSPACE/_compat/spectre_beam"
             echo "SPECTRE_DIRECTIVE_PATH=$GITHUB_WORKSPACE/_compat/spectre_directive"
             echo "SPECTRE_KINETIC_PATH=$GITHUB_WORKSPACE/_compat/spectre_kinetic"
