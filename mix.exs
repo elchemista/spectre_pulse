@@ -55,11 +55,7 @@ defmodule SpectrePulse.MixProject do
         {name, path: Path.expand(path, __DIR__), only: :test, runtime: false}
 
       _ ->
-        {name,
-         github: "elchemista/#{name}",
-         branch: "feature/stack-tools-0.4",
-         only: :test,
-         runtime: false}
+        {name, github: "elchemista/#{name}", branch: "main", only: :test, runtime: false}
     end
   end
 
@@ -77,7 +73,7 @@ defmodule SpectrePulse.MixProject do
     [
       assets: %{"docs/assets" => "docs/assets"},
       main: "readme",
-      source_ref: "feature/stack-tools-0.4",
+      source_ref: @version,
       extras: [
         "README.md",
         "docs/SPECTRE_0_4.md",
@@ -177,8 +173,8 @@ defmodule SpectrePulse.MixProject do
       licenses: ["Apache-2.0"],
       links: %{
         "GitHub" => @source_url,
-        "Documentation" => "#{@source_url}/blob/feature/stack-tools-0.4/README.md",
-        "Changelog" => "#{@source_url}/blob/feature/stack-tools-0.4/CHANGELOG.md"
+        "Documentation" => "https://hexdocs.pm/spectre_pulse/#{@version}",
+        "Changelog" => "#{@source_url}/blob/#{@version}/CHANGELOG.md"
       },
       files: ~w(lib priv docs examples mix.exs .formatter.exs README.md CHANGELOG.md LICENSE)
     ]

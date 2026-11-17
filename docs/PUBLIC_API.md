@@ -6,7 +6,7 @@ Protocol and transport contracts remain supported. Instance, Work/Vigil and Stud
 
 This file is the normative public API manifest for Spectre Pulse `0.1.0`.
 Protocol v1 remains stable while the package and Stack contracts target
-Spectre `0.4.0` on this development branch. Compatibility guarantees
+Spectre `0.4.0`. Compatibility guarantees
 apply only to the modules and callables listed below. Any module, function,
 macro, or callback not listed here is an implementation detail even when it is
 exported or visible in generated docs.

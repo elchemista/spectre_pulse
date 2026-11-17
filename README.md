@@ -11,25 +11,20 @@ and the AgentServer owns the conversation. Protocol/contact inspection is a
 cognitive command; an explicitly bound send becomes a GAM proposal. Existing
 Instance and Studio integrations remain available as separate runtime surfaces.
 
-## Installation on the 0.4 development branch
+## Installation
 
-This branch targets the **unreleased Spectre 0.4 architecture**. Use matching Git
-branches; the examples do not assume that Spectre 0.4 is available from Hex.
-For reproducible deployments, replace branch selectors with reviewed commit refs.
+Add the packages to your application:
 
 ```elixir
-def deps do
+defp deps do
   [
-    {:spectre, github: "elchemista/spectre",
-     branch: "feature/agent-server-gam", override: true},
-    {:spectre_pulse, github: "elchemista/spectre_pulse",
-     branch: "feature/stack-tools-0.4"}
+    {:spectre, "~> 0.4.0"},
+    {:spectre_pulse, "~> 0.1.0"}
   ]
 end
 ```
 
-The core requirement `~> 0.4.0` describes compatibility; use these source
-branches until the matching packages are available. For local development, see
+For local development and explicit source overrides, see
 [Contributing](#contributing).
 
 ## Discover the protocol in AgentServer
@@ -123,7 +118,7 @@ the human signing authority, and Pulse `accepted` receipts never count as consen
 - [Migration from the 0.3 integration](docs/MIGRATING_TO_0_4.md)
 - [Standalone and retained runtime reference](docs/TRANSPORTS_AND_LEGACY_RUNTIME.md)
 - [Public API](docs/PUBLIC_API.md) and [changelog](CHANGELOG.md)
-- [Governed Act Model](https://spectre.guide/en/governed-act-model) and [core tool lifecycle](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/STACK_TOOLS.md)
+- [Governed Act Model](https://spectre.guide/en/governed-act-model) and [core tool lifecycle](https://github.com/elchemista/spectre/blob/0.4.0/docs/STACK_TOOLS.md)
 
 ## Use inside a reusable Skill
 
@@ -131,7 +126,7 @@ The generated `pulse` helper also works in Skill Server callbacks using the same
 Stack. Each mount has its own process, state and checkpoint; governed operations
 share the root AgentServer's GAM Domain and must satisfy both root operations
 and mount `governed:` permissions. See the
-[core Skill guide](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/SKILLS.md) for ownership and consent.
+[core Skill guide](https://github.com/elchemista/spectre/blob/0.4.0/docs/SKILLS.md) for ownership and consent.
 
 ## Contributing
 

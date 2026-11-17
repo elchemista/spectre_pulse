@@ -5,7 +5,7 @@ through that person's AgentServer. Pulse carries the messages; Managed GAM owns
 the frozen request, trust configuration, human signatures, Evidence and admission.
 The receiving AI has no authority to approve for the human.
 
-Start with the [core two-Server setup](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/EXTERNAL_APPROVALS.md), including
+Start with the [core two-Server setup](https://github.com/elchemista/spectre/blob/0.4.0/docs/EXTERNAL_APPROVALS.md), including
 independent identities/storage, operation permissions, the approver's Ed25519
 public key and the human chat host's private signing key. That example also runs
 without Pulse. The keys and approval mandate remain trusted host configuration,
@@ -92,6 +92,6 @@ and outage buffering belong to the application and core storage policy.
 A restored customer resumes consent suspended; its `resume_pending/2` callback
 must issue a fresh Presentation/request. Old decisions cannot authorize that new
 wait. Cancellation is best effort and deadlines remain binding. See the
-[core approval and storage guide](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/EXTERNAL_APPROVALS.md) for recovery,
-outages and UI events, and [payload storage](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/PAYLOAD_STORAGE.md) for
+[core approval and storage guide](https://github.com/elchemista/spectre/blob/0.4.0/docs/EXTERNAL_APPROVALS.md) for recovery,
+outages and UI events, and [payload storage](https://github.com/elchemista/spectre/blob/0.4.0/docs/PAYLOAD_STORAGE.md) for
 application-owned encryption or external object storage.

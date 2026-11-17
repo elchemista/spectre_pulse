@@ -12,6 +12,7 @@ defmodule SpectrePulse.GitHubDistributionTest do
 
   test "core and satellites use explicit local overrides or their published source" do
     config = Mix.Project.config()
+    assert config[:docs][:source_ref] == config[:version]
     deps = Keyword.fetch!(config, :deps)
 
     Enum.each(@satellite_repositories, fn {name, repository} ->
@@ -27,6 +28,7 @@ defmodule SpectrePulse.GitHubDistributionTest do
 
         _ ->
           assert opts[:github] == "elchemista/#{repository}"
+          assert opts[:branch] == "main"
           refute Keyword.has_key?(opts, :path)
       end
 

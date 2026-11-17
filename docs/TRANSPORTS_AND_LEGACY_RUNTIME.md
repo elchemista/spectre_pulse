@@ -1,6 +1,6 @@
 # Native Pulse and retained runtime integration
 
-For the retained core runtime APIs, see the [compatibility index](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/COMPATIBILITY.md).
+For the retained core runtime APIs, see the [compatibility index](https://github.com/elchemista/spectre/blob/0.4.0/docs/COMPATIBILITY.md).
 
 Pulse's Envelope v1, addresses, discovery and transports can be used without an
 AgentServer. The host owns authentication, routing, supervision and application

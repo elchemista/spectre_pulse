@@ -102,7 +102,7 @@ automatically installed AgentServer registry or new authorization system. See
 Use `pulse` in Skill Server callbacks with the same installed Stack. Each mount
 keeps its own state and checkpoint while sharing the root GAM Domain; mounting
 does not grant authority. A bound send remains governed and an uncertain transport outcome must be reconciled before another send. See the
-[core Skill ownership guide](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/SKILLS.md).
+[core Skill ownership guide](https://github.com/elchemista/spectre/blob/0.4.0/docs/SKILLS.md).
 
 ## Command lifecycle
 
@@ -111,5 +111,5 @@ in `handle_result/3`. Invalid input is reported as
 `{:error, {:tool_rejected, tool, operation, reason}}`. Recovery and acquired results
 remain scoped to the original command; native package calls outside the Server
 retain their own host boundary. See the
-[Server lifecycle](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/STACK_TOOLS.md) and
-[Managed GAM guide](https://github.com/elchemista/spectre/blob/feature/agent-server-gam/docs/MANAGED_GAM.md).
+[Server lifecycle](https://github.com/elchemista/spectre/blob/0.4.0/docs/STACK_TOOLS.md) and
+[Managed GAM guide](https://github.com/elchemista/spectre/blob/0.4.0/docs/MANAGED_GAM.md).
