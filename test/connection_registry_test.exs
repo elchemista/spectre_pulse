@@ -335,7 +335,14 @@ defmodule Spectre.Pulse.ConnectionRegistryTest do
     assert {:ok, pong_state} =
              Socket.handle_control({payload, [opcode: :pong]}, heartbeat_state)
 
-    assert pong_state.connection.last_seen_at >= heartbeat_state.connection.last_seen_at
+    assert DateTime.compare(
+             pong_state.connection.last_seen_at,
+             heartbeat_state.connection.last_seen_at
+           ) in [
+             :gt,
+             :eq
+           ]
+
     assert :ok = Socket.terminate(:closed, pong_state)
   end
 
