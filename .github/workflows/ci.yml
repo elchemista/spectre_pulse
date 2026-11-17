@@ -64,7 +64,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_mnemonic
-          ref: 4243d342bbf3023435f9c24b85161789d9047772
+          ref: b32766c105349daab2d19c9118a8fba6220d2c4c
           path: _compat/spectre_mnemonic
           persist-credentials: false
 
@@ -153,7 +153,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_mnemonic
-          ref: 4243d342bbf3023435f9c24b85161789d9047772
+          ref: b32766c105349daab2d19c9118a8fba6220d2c4c
           path: _compat/spectre_mnemonic
           persist-credentials: false
 
