@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_directive
-          ref: 83eb717cda08f1392555300def8c62820e52d14f
+          ref: e9f206592a9a8c63b2d59595a33f07dc50803c39
           path: _compat/spectre_directive
           persist-credentials: false
 
@@ -129,7 +129,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: elchemista/spectre_directive
-          ref: 83eb717cda08f1392555300def8c62820e52d14f
+          ref: e9f206592a9a8c63b2d59595a33f07dc50803c39
           path: _compat/spectre_directive
           persist-credentials: false
 
